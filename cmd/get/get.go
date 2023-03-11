@@ -5,9 +5,9 @@ package get
 
 import (
 	"fmt"
-	"strings"
-
+	"github.com/mohamadkrayem/requestCLI/methods"
 	"github.com/spf13/cobra"
+	"strings"
 )
 
 var (
@@ -27,16 +27,18 @@ This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		url = args[0]
+		existHTTPS := strings.Contains(url, "https://")
+		existHTTP := strings.Contains(url, "http://")
 		if https {
-			if !strings.Contains(url, "https://") {
+			if !existHTTPS && !existHTTP {
 				url = "https://" + url
 			}
 		} else {
-			if !strings.Contains(url, "http://") {
+			if !existHTTPS && !existHTTP {
 				url = "http://" + url
 			}
 		}
-		fmt.Println(url)
+		getLink(url)
 	},
 	Args: cobra.MinimumNArgs(1),
 }
@@ -55,6 +57,12 @@ func init() {
 	GetCmd.Flags().BoolVarP(&https, "secure", "s", false, "http or https")
 }
 
-func getLink(url string) {
+func getLink(urlARG string) {
+	resSTR, err := methods.GetLinkToPrint(urlARG)
+	if err != nil {
+		fmt.Print(err)
+		return
+	}
 
+	fmt.Println(resSTR)
 }
