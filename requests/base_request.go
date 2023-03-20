@@ -4,6 +4,7 @@ import (
 	//"fmt"
 	//	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 
 	auth "github.com/mohamadkrayem/requestCLI/authentication"
@@ -15,7 +16,7 @@ import (
 type BaseRequest struct {
 	Method    string
 	URL       string
-	Headers   map[string]interface{}
+	Headers   map[string]any
 	Cookies   map[string]string
 	Body      string
 	BasicAuth auth.BaseAuth
@@ -23,11 +24,33 @@ type BaseRequest struct {
 
 func (req *BaseRequest) WithHeader(key string, value string) *BaseRequest {
 	if req.Headers == nil {
-		req.Headers = make(map[string]interface{})
+		req.Headers = make(map[string]any)
 	}
 
 	req.Headers[key] = value
 	return req
+}
+
+func GenerateUrl(reqURL string, securityFlag bool, queryParams map[string]string) string {
+	existHTTPS := strings.Contains(reqURL, "https://")
+	existHTTP := strings.Contains(reqURL, "http://")
+	if securityFlag {
+		if !existHTTPS && !existHTTP {
+			reqURL = "https://" + reqURL
+		}
+	} else {
+		if !existHTTPS && !existHTTP {
+			reqURL = "http://" + reqURL
+		}
+	}
+	if queryParams != nil {
+		query := url.Values{}
+		for key, value := range queryParams {
+			query.Set(key, value)
+		}
+		reqURL += "?" + query.Encode()
+	}
+	return reqURL
 }
 
 func (req *BaseRequest) WithHeaders(jsonData js.Json) (*BaseRequest, error) {
@@ -38,6 +61,13 @@ func (req *BaseRequest) WithHeaders(jsonData js.Json) (*BaseRequest, error) {
 
 	req.Headers = jsonMap
 	return req, err
+}
+
+func (req *BaseRequest) WithHeadersMap(headersMap *(map[string]string)) *BaseRequest {
+	for key, value := range *headersMap {
+		req.Headers[key] = value
+	}
+	return req
 }
 
 func (req *BaseRequest) WithCookie(key string, value string) *BaseRequest {

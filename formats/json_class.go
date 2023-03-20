@@ -20,8 +20,26 @@ func NewJson(jsonInput string) (Json, error) {
 	return jsonString, nil
 }
 
-func (js *Json) ToMap() (map[string]interface{}, error) {
-	var jsonMap map[string]interface{}
+func ToJSONStr(JsonAsMap map[string]string) (string, error) {
+	JsonString, err := json.Marshal(JsonAsMap)
+	if err != nil {
+		panic(err)
+	}
+	return string(JsonString), nil
+}
+
+func ToJSON(JsonAsMap map[string]string) (Json, error) {
+	JsonString, err := json.Marshal(JsonAsMap)
+	if err != nil {
+		panic(err)
+	}
+	var JsonJS Json
+	JsonJS, _ = NewJson(string(JsonString))
+	return JsonJS, nil
+}
+
+func (js *Json) ToMap() (map[string]any, error) {
+	var jsonMap map[string]any
 
 	if err := json.Unmarshal([]byte(*js), &jsonMap); err != nil {
 		fmt.Println(err)
@@ -68,8 +86,8 @@ func (js *Json) GetColorizedJSON() (string, error) {
 	return buf.String(), nil
 }
 
-func toMapOptionalJS(js string) (map[string]interface{}, error) {
-	var jsonMap map[string]interface{}
+func toMapOptionalJS(js string) (map[string]any, error) {
+	var jsonMap map[string]any
 
 	if err := json.Unmarshal([]byte(js), &jsonMap); err != nil {
 		fmt.Println(err)
@@ -98,20 +116,33 @@ func removeNewlinesFromJSONString(jsonStr string) (Json, error) {
 	return Json(modifiedJSONStr), nil
 }
 
-func removeNewlinesRecursively(jsonObj interface{}) {
+func removeNewlinesRecursively(jsonObj any) {
 	switch val := jsonObj.(type) {
 	case string:
 		// replace all newline characters in string values
 		jsonObj = strings.ReplaceAll(val, "\n", "")
-	case map[string]interface{}:
+	case map[string]any:
 		// traverse map values recursively
 		for _, v := range val {
 			removeNewlinesRecursively(v)
 		}
-	case []interface{}:
+	case []any:
 		// traverse array values recursively
 		for _, v := range val {
 			removeNewlinesRecursively(v)
 		}
 	}
+}
+
+func isJson(data string) (bool, error) {
+	var jsonData any
+	err := json.Unmarshal([]byte(data), &jsonData)
+	if err != nil {
+		fmt.Println(err)
+		return false, err
+	} else {
+		fmt.Println(jsonData)
+		return true, nil
+	}
+
 }

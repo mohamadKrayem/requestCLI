@@ -143,7 +143,7 @@ func GetColorizedJSON(jsonData []byte) (string, error) {
 	}
 
 	// Unmarshal the JSON data
-	var m interface{}
+	var m any
 	if err := json.Unmarshal(jsonData, &m); err != nil {
 		return "", err
 	}
