@@ -10,7 +10,6 @@ import (
 	auth "github.com/mohamadkrayem/requestCLI/authentication"
 	js "github.com/mohamadkrayem/requestCLI/formats"
 	rs "github.com/mohamadkrayem/requestCLI/response"
-	//"net/http"
 )
 
 type BaseRequest struct {
@@ -20,6 +19,16 @@ type BaseRequest struct {
 	Cookies   map[string]string
 	Body      string
 	BasicAuth auth.BaseAuth
+}
+
+func NewRequest(method, url string) BaseRequest {
+	return BaseRequest{
+		Method:  method,
+		URL:     url,
+		Headers: make(map[string]any),
+		Cookies: make(map[string]string),
+		Body:    "",
+	}
 }
 
 func (req *BaseRequest) WithHeader(key string, value string) *BaseRequest {
@@ -40,6 +49,7 @@ func GenerateUrl(reqURL string, securityFlag bool, queryParams map[string]string
 		}
 	} else {
 		if !existHTTPS && !existHTTP {
+			print("aldfj;ldkfj")
 			reqURL = "http://" + reqURL
 		}
 	}
@@ -87,11 +97,12 @@ func (req *BaseRequest) WithBody(body string) *BaseRequest {
 func (req *BaseRequest) Send() (*rs.Response, error) {
 	client := &http.Client{}
 	body := strings.NewReader(req.Body)
-
 	reqHttp, err := http.NewRequest(req.Method, req.URL, body)
 	if err != nil {
 		panic(err)
 	}
+
+	addDefaultHeaders(&req.Headers)
 
 	for key, value := range req.Headers {
 		reqHttp.Header.Add(key, value.(string))
@@ -114,4 +125,22 @@ func (req *BaseRequest) Send() (*rs.Response, error) {
 	defer resp.Body.Close()
 	newRes := rs.NewResponse(resp)
 	return &newRes, nil
+}
+
+func addDefaultHeaders(headers *map[string]any) {
+	if _, ok := (*headers)["Content-Type"]; !ok {
+		(*headers)["Content-Type"] = "application/json"
+	}
+	//if _, ok := (*headers)["Accept-Encoding"]; !ok {
+	//	(*headers)["Accept-Encoding"] = "gzip, deflate"
+	//}
+	if _, ok := (*headers)["Accept"]; !ok {
+		(*headers)["Accept"] = "*/*"
+	}
+	if _, ok := (*headers)["Connection"]; !ok {
+		(*headers)["Connection"] = "keep-alive"
+	}
+
+	(*headers)["User-Agent"] = "RequestCLI"
+
 }

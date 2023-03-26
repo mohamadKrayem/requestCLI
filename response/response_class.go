@@ -92,7 +92,6 @@ func storeColorizedBodyAsJSON(res *http.Response) (string, error) {
 	resBody, _ := readResponseBody(res)
 	resJS, err := js.NewJson(string(resBody))
 	if err != nil {
-		fmt.Println("Please enter a valid json format !!!!")
 		return "", err
 	}
 	resStr, err := resJS.GetColorizedJSON()
@@ -129,4 +128,3 @@ func getColorizedHTML(res *http.Response) (string, error) {
 	// Print the colorized HTML code to the console
 	return buf.String(), nil
 }
-

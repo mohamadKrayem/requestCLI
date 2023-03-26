@@ -70,6 +70,16 @@ func (js *Json) GetColorizedJSON() (string, error) {
 		enc.SetColors(clrs)
 	}
 
+	if isArray(string(jsonData)) {
+		return encodeArrayOfMaps(jsonData, *enc, &buf)
+	} else {
+		return encodeMaps(jsonData, *enc, &buf)
+	}
+
+}
+
+func encodeMaps(jsonData []byte, enc jsoncolor.Encoder, buf *bytes.Buffer) (string, error) {
+	var jsonMap map[string]any
 	// Unmarshal the JSON data
 	jsonMap, err := toMapOptionalJS(string(jsonData))
 	if err != nil {
@@ -86,10 +96,30 @@ func (js *Json) GetColorizedJSON() (string, error) {
 	return buf.String(), nil
 }
 
+func encodeArrayOfMaps(jsonData []byte, enc jsoncolor.Encoder, buf *bytes.Buffer) (string, error) {
+
+	var jsonArray []any
+	// Unmarshal the JSON data
+	jsonArray, err := toArrayOfMaps(string(jsonData))
+	if err != nil {
+		return "", err
+	}
+
+	enc.SetIndent("", "  ")
+
+	// Encode the JSON data to the buffer
+	if err := enc.Encode(jsonArray); err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
+}
+
 func toMapOptionalJS(js string) (map[string]any, error) {
 	var jsonMap map[string]any
 
 	if err := json.Unmarshal([]byte(js), &jsonMap); err != nil {
+
 		fmt.Println(err)
 		return nil, err
 	}
@@ -97,23 +127,61 @@ func toMapOptionalJS(js string) (map[string]any, error) {
 	return jsonMap, nil
 }
 
+func toArrayOfMaps(js string) ([]any, error) {
+	var arrayOfMaps []any
+	if err := json.Unmarshal([]byte(js), &arrayOfMaps); err != nil {
+		return nil, err
+	}
+
+	return arrayOfMaps, nil
+}
+
+func isArray(js string) bool {
+	if string(js[0]) == "[" {
+		return true
+	}
+	return false
+}
+
 func removeNewlinesFromJSONString(jsonStr string) (Json, error) {
 	// parse the JSON string into an interface{}
-	jsonMap, err := toMapOptionalJS(jsonStr)
-	if err != nil {
-		return "", err
+	if string(jsonStr[0]) == "[" {
+		var jsonArrayOfMaps []any
+		jsonArrayOfMaps, err := toArrayOfMaps(jsonStr)
+		_ = jsonArrayOfMaps
+		if err != nil {
+			return "", err
+		}
+		var modifiedJSONStr []byte
+		// remove newline characters from all string values recursively
+		removeNewlinesRecursively(jsonArrayOfMaps)
+		// encode the modified JSON object back into a string
+		modifiedJSONStr, err = json.Marshal(jsonArrayOfMaps)
+		_ = modifiedJSONStr
+		if err != nil {
+			return "", err
+		}
+		return Json(modifiedJSONStr), nil
+	} else {
+		var jsonMap map[string]any
+		jsonMap, err := toMapOptionalJS(jsonStr)
+		_ = jsonMap
+		if err != nil {
+			return "", err
+		}
+
+		var modifiedJSONStr []byte
+
+		// remove newline characters from all string values recursively
+		removeNewlinesRecursively(jsonMap)
+		// encode the modified JSON object back into a string
+		modifiedJSONStr, err = json.Marshal(jsonMap)
+		_ = modifiedJSONStr
+		if err != nil {
+		}
+
+		return Json(modifiedJSONStr), nil
 	}
-
-	// remove newline characters from all string values recursively
-	removeNewlinesRecursively(jsonMap)
-
-	// encode the modified JSON object back into a string
-	modifiedJSONStr, err := json.Marshal(jsonMap)
-	if err != nil {
-		return "", err
-	}
-
-	return Json(modifiedJSONStr), nil
 }
 
 func removeNewlinesRecursively(jsonObj any) {
@@ -141,7 +209,6 @@ func isJson(data string) (bool, error) {
 		fmt.Println(err)
 		return false, err
 	} else {
-		fmt.Println(jsonData)
 		return true, nil
 	}
 

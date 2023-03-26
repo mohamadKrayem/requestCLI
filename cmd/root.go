@@ -7,6 +7,7 @@ import (
 	//"fmt"
 	"os"
 
+	json "github.com/mohamadkrayem/requestCLI/formats"
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +23,9 @@ var (
 	showStatus  bool
 	showHeaders bool
 	showBody    bool
+	//https bool
+	url       string
+	headersjs json.Json
 )
 
 // rootCmd represents the base command when called without any subcommands
