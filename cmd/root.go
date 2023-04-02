@@ -1,14 +1,12 @@
 /*
-Copyright © 2023 NAME HERE <EMAIL ADDRESS>
+Copyright © 2023 Mohamad Krayem <mohamadkrayem@email.com>
 */
 package cmd
 
 import (
-	//"fmt"
-	"os"
-
 	json "github.com/mohamadkrayem/requestCLI/formats"
 	"github.com/spf13/cobra"
+	"os"
 )
 
 var (
@@ -20,12 +18,10 @@ var (
 	headers     bool
 	headersJS   map[string]string
 	https       bool
-	showStatus  bool
-	showHeaders bool
-	showBody    bool
-	//https bool
-	url       string
-	headersjs json.Json
+	ShowStatus  bool
+	ShowHeaders bool
+	ShowBody    bool
+	headersjs   json.Json
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -56,7 +52,7 @@ func init() {
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.requestCLI.yaml)")
 
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle.")
-	rootCmd.PersistentFlags().BoolVarP(&https, "ssl", "s", false, "https or http.")
+	rootCmd.PersistentFlags().BoolVarP(&https, "secure", "s", false, "https or http.")
 	rootCmd.PersistentFlags().StringToStringVarP(&queryParams, "query", "q", nil, "Write your query params.")
 	rootCmd.PersistentFlags().StringToStringVarP(&cookies, "cookie", "c", nil, "Write your cookies.")
 	rootCmd.PersistentFlags().StringToStringVarP(&auth, "auth", "a", nil, "Write your basic auth.")
@@ -64,8 +60,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&headers, "headers", false, "Write your nested headers.")
 	rootCmd.PersistentFlags().StringVarP(&bodyJS, "Nbody", "b", "", "Write your simple body.")
 	rootCmd.PersistentFlags().StringToStringVarP(&headersJS, "Nheaders", "n", nil, "Write your simple headers.")
-	rootCmd.PersistentFlags().BoolVarP(&showBody, "sbody", "B", false, "Print only the body.")
-	rootCmd.PersistentFlags().BoolVarP(&showHeaders, "sheaders", "H", false, "Print only the headers.")
-	rootCmd.PersistentFlags().BoolVarP(&showStatus, "status", "S", false, "Print only the status.")
-	rootCmd.AddCommand(GetCmd)
+	rootCmd.PersistentFlags().BoolVarP(&ShowBody, "sbody", "B", false, "Print only the body.")
+	rootCmd.PersistentFlags().BoolVarP(&ShowHeaders, "sheaders", "H", false, "Print only the headers.")
+	rootCmd.PersistentFlags().BoolVarP(&ShowStatus, "status", "S", false, "Print only the status.")
 }

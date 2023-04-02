@@ -1,8 +1,6 @@
 package requests
 
 import (
-	//"fmt"
-	//	"encoding/json"
 	"net/http"
 	"net/url"
 	"strings"
@@ -49,7 +47,6 @@ func GenerateUrl(reqURL string, securityFlag bool, queryParams map[string]string
 		}
 	} else {
 		if !existHTTPS && !existHTTP {
-			print("aldfj;ldkfj")
 			reqURL = "http://" + reqURL
 		}
 	}
@@ -94,7 +91,8 @@ func (req *BaseRequest) WithBody(body string) *BaseRequest {
 	return req
 }
 
-func (req *BaseRequest) Send() (*rs.Response, error) {
+// func (req *BaseRequest) Send() (*rs.Response, error) {
+func (req *BaseRequest) Send(ss, sh, sb bool) (*rs.Response, error) {
 	client := &http.Client{}
 	body := strings.NewReader(req.Body)
 	reqHttp, err := http.NewRequest(req.Method, req.URL, body)
@@ -123,7 +121,8 @@ func (req *BaseRequest) Send() (*rs.Response, error) {
 	}
 
 	defer resp.Body.Close()
-	newRes := rs.NewResponse(resp)
+	newRes := rs.NewResponse(resp, ss, sh, sb)
+	//newRes := rs.NewResponse(resp)
 	return &newRes, nil
 }
 

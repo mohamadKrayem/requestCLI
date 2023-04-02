@@ -1,8 +1,6 @@
 package response
 
 import (
-	//"bytes"
-	//"encoding/json"
 	"bytes"
 	"fmt"
 	"io"
@@ -12,12 +10,7 @@ import (
 	"github.com/fatih/color"
 	js "github.com/mohamadkrayem/requestCLI/formats"
 
-	//"github.com/mattn/go-colorable"
-	//"github.com/neilotoole/jsoncolor"
-	//"io"
 	"net/http"
-	//urlLib "net/url"
-	//"strings"
 )
 
 type Response struct {
@@ -27,14 +20,23 @@ type Response struct {
 	Body    string
 }
 
-func NewResponse(httpRes *http.Response) Response {
-	response := Response{
-		Proto:  httpRes.Proto,
-		Status: httpRes.Status,
+func NewResponse(httpRes *http.Response, showStatus, showHeaders, showBody bool) Response {
+	var response Response
+	if showStatus {
+		response.Proto = httpRes.Proto
+		response.Status = httpRes.Status
+	} else if showHeaders {
+		response.Headers = storeColorizedHeaders(httpRes)
+	} else if showBody {
+		response.Body, _ = storeColorizedBody(httpRes)
+	} else {
+		response = Response{
+			Proto:  httpRes.Proto,
+			Status: httpRes.Status,
+		}
+		response.Headers = storeColorizedHeaders(httpRes)
+		response.Body, _ = storeColorizedBody(httpRes)
 	}
-	response.Headers = storeColorizedHeaders(httpRes)
-	response.Body, _ = storeColorizedBody(httpRes)
-
 	return response
 }
 

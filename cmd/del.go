@@ -1,5 +1,5 @@
 /*
-Copyright © 2023 NAME HERE <EMAIL ADDRESS>
+Copyright © 2023 Mohamad Krayem <mohamadkrayem@email.com>
 */
 package cmd
 
@@ -19,10 +19,10 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		command.Run(args, cmd, &bodyJS, "DELETE", &headersjs, &headersJS, https)
+		command.Run(args, cmd, &bodyJS, "DELETE", &headersjs, &headersJS, https, ShowStatus, ShowHeaders, ShowBody)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		command.PersistentPreRun(cmd, args, body, headers, &bodyJS, &headersJS, headersjs)
+		command.PersistentPreRun(cmd, args, body, headers, &bodyJS, &headersJS, &headersjs)
 	},
 }
 

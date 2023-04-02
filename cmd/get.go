@@ -1,18 +1,11 @@
 /*
-Copyright © 2023 Mohamad Krayem mohamadkrayem@email.com
+Copyright © 2023 Mohamad Krayem <mohamadkrayem@email.com>
 */
 package cmd
 
 import (
-	//	"bufio"
-	//	"os"
-	//	"strings"
-
-	"github.com/mohamadkrayem/requestCLI/command"
-	//	json "github.com/mohamadkrayem/requestCLI/formats"
-	//	rq "github.com/mohamadkrayem/requestCLI/requests"
+	command "github.com/mohamadkrayem/requestCLI/command"
 	"github.com/spf13/cobra"
-	//"strings"
 )
 
 // getCmd represents the get command
@@ -26,10 +19,10 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		command.Run(args, cmd, &bodyJS, "GET", &headersjs, &headersJS, https)
+		command.Run(args, cmd, &bodyJS, "GET", &headersjs, &headersJS, https, ShowStatus, ShowHeaders, ShowBody)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		command.PersistentPreRun(cmd, args, body, headers, &bodyJS, &headersJS, headersjs)
+		command.PersistentPreRun(cmd, args, body, headers, &bodyJS, &headersJS, &headersjs)
 	},
 	Args: cobra.MinimumNArgs(1),
 }
