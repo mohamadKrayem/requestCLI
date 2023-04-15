@@ -2,11 +2,12 @@ package command
 
 import (
 	"bufio"
+	"os"
+	"strings"
+
 	json "github.com/mohamadkrayem/requestCLI/formats"
 	rq "github.com/mohamadkrayem/requestCLI/requests"
 	"github.com/spf13/cobra"
-	"os"
-	"strings"
 )
 
 type Command struct{}
@@ -65,7 +66,7 @@ func scanRequest() string {
 		if strTest[len(strTest)-1] == ';' {
 			break
 		}
-		input += scanner.Text() + "\n"
+		input += scanner.Text()
 	}
 
 	input = strings.ReplaceAll(input, "\\n", "")
