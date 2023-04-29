@@ -86,7 +86,16 @@ func (req *BaseRequest) WithCookie(key string, value string) *BaseRequest {
 	return req
 }
 
-func (req *BaseRequest) WithBody(body string) *BaseRequest {
+func (req *BaseRequest) WithBody(body string, form *bool) *BaseRequest {
+	if _, err := js.IsJson(body); err != nil {
+		if _, ok := req.Headers["Content-Type"]; !ok {
+			req.Headers["Content-Type"] = "text/plain"
+		}
+	} else if *form {
+		req.Headers["Content-Type"] = "application/x-www-form-urlencoded"
+	} else {
+		req.Headers["Content-Type"] = "application/json"
+	}
 	req.Body = body
 	return req
 }

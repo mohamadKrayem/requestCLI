@@ -4,9 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/mattn/go-colorable"
 	"github.com/neilotoole/jsoncolor"
-	"strings"
 )
 
 type Json string
@@ -176,9 +177,9 @@ func removeNewLinesFromJSONString(jsonStr string) (Json, error) {
 		removeNewLinesRecursively(jsonMap)
 		// encode the modified JSON object back into a string
 		modifiedJSONStr, err = json.Marshal(jsonMap)
-		_ = modifiedJSONStr
-		if err != nil {
-		}
+
+	//	if err != nil {
+	//	}
 
 		return Json(modifiedJSONStr), nil
 	}
@@ -202,7 +203,7 @@ func removeNewLinesRecursively(jsonObj any) {
 	}
 }
 
-func isJson(data string) (bool, error) {
+func IsJson(data string) (bool, error) {
 	var jsonData any
 	err := json.Unmarshal([]byte(data), &jsonData)
 	if err != nil {

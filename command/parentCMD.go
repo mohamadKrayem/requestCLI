@@ -12,18 +12,18 @@ import (
 
 type Command struct{}
 
-func Run(args []string, cmd *cobra.Command, bodyJS *string, method string, headersjs *json.Json, headersJS *map[string]string, https bool, ss, sh, sb bool) {
+func Run(args []string, cmd *cobra.Command, bodyJS *string, method string, headersjs *json.Json, headersJS *map[string]string, https bool, ss, sh, sb bool, form *bool) {
 	URL := rq.GenerateUrl(args[0], https, nil)
 	request := rq.NewRequest(method, URL)
-
-	if *bodyJS != "" {
-		request.WithBody(*bodyJS)
-	}
 
 	if *headersJS != nil {
 		request.WithHeadersMap(headersJS)
 	} else if *headersjs != "" {
 		request.WithHeaders(*headersjs)
+	}
+
+	if *bodyJS != "" {
+		request.WithBody(*bodyJS, form)
 	}
 
 	resp, err := request.Send(ss, sh, sb)

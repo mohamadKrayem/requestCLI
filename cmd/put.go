@@ -19,7 +19,7 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		command.Run(args, cmd, &bodyJS, "PUT", &headersjs, &headersJS, https, ShowStatus, ShowHeaders, ShowBody)
+		command.Run(args, cmd, &bodyJS, "PUT", &headersjs, &headersJS, https, ShowStatus, ShowHeaders, ShowBody, &form)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		command.PersistentPreRun(cmd, args, body, headers, &bodyJS, &headersJS, &headersjs)
