@@ -21,6 +21,7 @@ var (
 	ShowStatus  bool
 	ShowHeaders bool
 	ShowBody    bool
+	form        bool
 	headersjs   json.Json
 )
 
@@ -53,6 +54,7 @@ func init() {
 
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle.")
 	rootCmd.PersistentFlags().BoolVarP(&https, "secure", "s", false, "https or http.")
+	rootCmd.PersistentFlags().BoolVarP(&form, "form", "f", false, "Send a form.")
 	rootCmd.PersistentFlags().StringToStringVarP(&queryParams, "query", "q", nil, "Write your query params.")
 	rootCmd.PersistentFlags().StringToStringVarP(&cookies, "cookie", "c", nil, "Write your cookies.")
 	rootCmd.PersistentFlags().StringToStringVarP(&auth, "auth", "a", nil, "Write your basic auth.")

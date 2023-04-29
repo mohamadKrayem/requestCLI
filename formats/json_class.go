@@ -12,7 +12,7 @@ import (
 type Json string
 
 func NewJson(jsonInput string) (Json, error) {
-	jsonString, err := removeNewlinesFromJSONString(jsonInput)
+	jsonString, err := removeNewLinesFromJSONString(jsonInput)
 	if err != nil {
 		return Json(""), err
 	}
@@ -143,7 +143,7 @@ func isArray(js string) bool {
 	return false
 }
 
-func removeNewlinesFromJSONString(jsonStr string) (Json, error) {
+func removeNewLinesFromJSONString(jsonStr string) (Json, error) {
 	// parse the JSON string into an interface{}
 	if string(jsonStr[0]) == "[" {
 		var jsonArrayOfMaps []any
@@ -154,7 +154,7 @@ func removeNewlinesFromJSONString(jsonStr string) (Json, error) {
 		}
 		var modifiedJSONStr []byte
 		// remove newline characters from all string values recursively
-		removeNewlinesRecursively(jsonArrayOfMaps)
+		removeNewLinesRecursively(jsonArrayOfMaps)
 		// encode the modified JSON object back into a string
 		modifiedJSONStr, err = json.Marshal(jsonArrayOfMaps)
 		_ = modifiedJSONStr
@@ -173,7 +173,7 @@ func removeNewlinesFromJSONString(jsonStr string) (Json, error) {
 		var modifiedJSONStr []byte
 
 		// remove newline characters from all string values recursively
-		removeNewlinesRecursively(jsonMap)
+		removeNewLinesRecursively(jsonMap)
 		// encode the modified JSON object back into a string
 		modifiedJSONStr, err = json.Marshal(jsonMap)
 		_ = modifiedJSONStr
@@ -184,7 +184,7 @@ func removeNewlinesFromJSONString(jsonStr string) (Json, error) {
 	}
 }
 
-func removeNewlinesRecursively(jsonObj any) {
+func removeNewLinesRecursively(jsonObj any) {
 	switch val := jsonObj.(type) {
 	case string:
 		// replace all newline characters in string values
@@ -192,12 +192,12 @@ func removeNewlinesRecursively(jsonObj any) {
 	case map[string]any:
 		// traverse map values recursively
 		for _, v := range val {
-			removeNewlinesRecursively(v)
+			removeNewLinesRecursively(v)
 		}
 	case []any:
 		// traverse array values recursively
 		for _, v := range val {
-			removeNewlinesRecursively(v)
+			removeNewLinesRecursively(v)
 		}
 	}
 }
