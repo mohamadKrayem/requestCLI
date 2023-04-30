@@ -2,6 +2,7 @@ package command
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
 
@@ -16,13 +17,20 @@ func Run(args []string, cmd *cobra.Command, bodyJS *string, method string, heade
 	URL := rq.GenerateUrl(args[0], https, nil)
 	request := rq.NewRequest(method, URL)
 
+	if *form {
+		*headersJS = make(map[string]string)
+		(*headersJS)["Content-Type"] = "application/x-www-form-urlencoded"
+	}
+
 	if *headersJS != nil {
 		request.WithHeadersMap(headersJS)
+		println("true")
 	} else if *headersjs != "" {
 		request.WithHeaders(*headersjs)
 	}
 
 	if *bodyJS != "" {
+		fmt.Println(*bodyJS)
 		request.WithBody(*bodyJS, form)
 	}
 

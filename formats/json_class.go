@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/mattn/go-colorable"
@@ -82,7 +83,7 @@ func (js *Json) GetColorizedJSON() (string, error) {
 func encodeMaps(jsonData []byte, enc jsoncolor.Encoder, buf *bytes.Buffer) (string, error) {
 	var jsonMap map[string]any
 	// Unmarshal the JSON data
-	jsonMap, err := toMapOptionalJS(string(jsonData))
+	jsonMap, err := ToMapOptionalJS(string(jsonData))
 	if err != nil {
 		return "", err
 	}
@@ -116,12 +117,11 @@ func encodeArrayOfMaps(jsonData []byte, enc jsoncolor.Encoder, buf *bytes.Buffer
 	return buf.String(), nil
 }
 
-func toMapOptionalJS(js string) (map[string]any, error) {
+func ToMapOptionalJS(js string) (map[string]any, error) {
 	var jsonMap map[string]any
 
 	if err := json.Unmarshal([]byte(js), &jsonMap); err != nil {
-
-		fmt.Println(err)
+		log.Fatal("Error in your json format")
 		return nil, err
 	}
 
@@ -165,8 +165,7 @@ func removeNewLinesFromJSONString(jsonStr string) (Json, error) {
 		return Json(modifiedJSONStr), nil
 	} else {
 		var jsonMap map[string]any
-		jsonMap, err := toMapOptionalJS(jsonStr)
-		_ = jsonMap
+		jsonMap, err := ToMapOptionalJS(jsonStr)
 		if err != nil {
 			return "", err
 		}
@@ -177,9 +176,12 @@ func removeNewLinesFromJSONString(jsonStr string) (Json, error) {
 		removeNewLinesRecursively(jsonMap)
 		// encode the modified JSON object back into a string
 		modifiedJSONStr, err = json.Marshal(jsonMap)
+		if err != nil {
+			return "", err
+		}
 
-	//	if err != nil {
-	//	}
+		//	if err != nil {
+		//	}
 
 		return Json(modifiedJSONStr), nil
 	}

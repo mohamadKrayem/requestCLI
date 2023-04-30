@@ -98,7 +98,6 @@ func storeColorizedBodyAsJSON(res *http.Response) (string, error) {
 	}
 	resStr, err := resJS.GetColorizedJSON()
 	if err != nil {
-		fmt.Println(err)
 		return "", err
 	}
 

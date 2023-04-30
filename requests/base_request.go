@@ -1,8 +1,11 @@
 package requests
 
 import (
+	"fmt"
+	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	auth "github.com/mohamadkrayem/requestCLI/authentication"
@@ -51,13 +54,49 @@ func GenerateUrl(reqURL string, securityFlag bool, queryParams map[string]string
 		}
 	}
 	if queryParams != nil {
-		query := url.Values{}
-		for key, value := range queryParams {
-			query.Set(key, value)
-		}
-		reqURL += "?" + query.Encode()
+		queryString := GenerateQueryParams(queryParams)
+		reqURL += "?" + queryString
 	}
 	return reqURL
+}
+
+func GenerateQueryParamsForStrings(queryParams map[string]string) string {
+	query := url.Values{}
+	for key, value := range queryParams {
+		query.Set(key, value)
+	}
+	queryString := query.Encode()
+
+	return queryString
+}
+
+func GenerateQueryParamsForAny(queryParams map[string]any) string {
+	query := url.Values{}
+	for key, value := range queryParams {
+		switch m := value.(type) {
+		case string:
+			query.Set(key, m)
+		case int:
+			query.Set(key, strconv.Itoa(m))
+		case float32:
+		case float64:
+			query.Set(key, strconv.FormatFloat(float64(m), 'f', -1, 64))
+		case bool:
+			query.Set(key, strconv.FormatBool(m))
+		}
+	}
+	return query.Encode()
+}
+
+func GenerateQueryParams(data interface{}) string {
+	var queryString string
+	switch m := data.(type) {
+	case map[string]string:
+		queryString = GenerateQueryParamsForStrings(m)
+	case map[string]any:
+		queryString = GenerateQueryParamsForAny(m)
+	}
+	return queryString
 }
 
 func (req *BaseRequest) WithHeaders(jsonData js.Json) (*BaseRequest, error) {
@@ -87,22 +126,21 @@ func (req *BaseRequest) WithCookie(key string, value string) *BaseRequest {
 }
 
 func (req *BaseRequest) WithBody(body string, form *bool) *BaseRequest {
-	if _, err := js.IsJson(body); err != nil {
-		if _, ok := req.Headers["Content-Type"]; !ok {
-			req.Headers["Content-Type"] = "text/plain"
+	if *form {
+		mapBody, err := js.ToMapOptionalJS(body)
+		if err != nil {
+			log.Fatal("Issue in json format")
 		}
-	} else if *form {
-		req.Headers["Content-Type"] = "application/x-www-form-urlencoded"
+		req.Body = GenerateQueryParams(mapBody)
 	} else {
-		req.Headers["Content-Type"] = "application/json"
+		req.Body = body
 	}
-	req.Body = body
 	return req
 }
 
-// func (req *BaseRequest) Send() (*rs.Response, error) {
 func (req *BaseRequest) Send(ss, sh, sb bool) (*rs.Response, error) {
 	client := &http.Client{}
+	fmt.Println()
 	body := strings.NewReader(req.Body)
 	reqHttp, err := http.NewRequest(req.Method, req.URL, body)
 	if err != nil {
