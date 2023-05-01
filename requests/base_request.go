@@ -1,7 +1,6 @@
 package requests
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -58,6 +57,10 @@ func GenerateUrl(reqURL string, securityFlag bool, queryParams map[string]string
 		reqURL += "?" + queryString
 	}
 	return reqURL
+}
+
+func (req *BaseRequest) AddQueryString(queryParams map[string]any) {
+	req.URL += "?" + GenerateQueryParams(queryParams)
 }
 
 func GenerateQueryParamsForStrings(queryParams map[string]string) string {
@@ -131,16 +134,28 @@ func (req *BaseRequest) WithBody(body string, form *bool) *BaseRequest {
 		if err != nil {
 			log.Fatal("Issue in json format")
 		}
-		req.Body = GenerateQueryParams(mapBody)
+		if req.Method == "GET" || req.Method == "DELETE" {
+			req.AddQueryString(mapBody)
+		} else {
+			req.Body = GenerateQueryParams(mapBody)
+		}
 	} else {
-		req.Body = body
+		if req.Method == "GET" || req.Method == "Delete" {
+			mapBody, err := js.ToMapOptionalJS(body)
+			if err != nil {
+				log.Fatal("Iusse in json format")
+			}
+			req.AddQueryString(mapBody)
+		} else {
+			req.Body = body
+		}
 	}
+
 	return req
 }
 
 func (req *BaseRequest) Send(ss, sh, sb bool) (*rs.Response, error) {
 	client := &http.Client{}
-	fmt.Println()
 	body := strings.NewReader(req.Body)
 	reqHttp, err := http.NewRequest(req.Method, req.URL, body)
 	if err != nil {
@@ -169,7 +184,6 @@ func (req *BaseRequest) Send(ss, sh, sb bool) (*rs.Response, error) {
 
 	defer resp.Body.Close()
 	newRes := rs.NewResponse(resp, ss, sh, sb)
-	//newRes := rs.NewResponse(resp)
 	return &newRes, nil
 }
 

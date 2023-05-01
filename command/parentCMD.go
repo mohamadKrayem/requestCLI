@@ -24,13 +24,11 @@ func Run(args []string, cmd *cobra.Command, bodyJS *string, method string, heade
 
 	if *headersJS != nil {
 		request.WithHeadersMap(headersJS)
-		println("true")
 	} else if *headersjs != "" {
 		request.WithHeaders(*headersjs)
 	}
 
 	if *bodyJS != "" {
-		fmt.Println(*bodyJS)
 		request.WithBody(*bodyJS, form)
 	}
 
@@ -66,6 +64,7 @@ func scanRequest() string {
 	// Read in the user's input
 	scanner := bufio.NewScanner(os.Stdin)
 	var input, strTest string
+	var count int
 
 	for scanner.Scan() {
 		strTest = strings.TrimSpace(scanner.Text())
@@ -73,7 +72,12 @@ func scanRequest() string {
 		//input[lastIndex] == ';' ? end of the input;
 		if strTest[len(strTest)-1] == ';' {
 			break
+		} else if strTest[len(strTest)-1] == '{' || strTest[len(strTest)-1] == '[' {
+			count += 2
+		} else if strTest[len(strTest)-1] != ',' {
+			count -= 2
 		}
+		fmt.Print(strings.Repeat(" ", count))
 		input += scanner.Text()
 	}
 
