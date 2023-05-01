@@ -2,8 +2,11 @@ package response
 
 import (
 	"bytes"
+	"compress/gzip"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"log"
 	"strings"
 
 	"github.com/alecthomas/chroma/quick"
@@ -20,13 +23,24 @@ type Response struct {
 	Body    string
 }
 
+// NewResponse creates a new Response object
 func NewResponse(httpRes *http.Response, showStatus, showHeaders, showBody bool) Response {
 	var response Response
+
+	// how the user wants to show all the response
 	if showStatus {
 		response.Proto = httpRes.Proto
 		response.Status = httpRes.Status
 	} else if showHeaders {
 		response.Headers = storeColorizedHeaders(httpRes)
+
+		//
+		//!!!!!!!!!!!!!!!!!!!!!!!! for testing purposes only !!!!!!!!!!!!!!!!!
+		/*
+			for key, val := range httpRes.Header {
+				fmt.Printf("%s:   %s\n", key, fmt.Sprintf("%v", val[0]))
+			}*/
+		//!!!!!!!!!!!!!!!!!!!!!!!! for testing purposes only !!!!!!!!!!!!!!!!!
 	} else if showBody {
 		response.Body, _ = storeColorizedBody(httpRes)
 	} else {
@@ -40,6 +54,7 @@ func NewResponse(httpRes *http.Response, showStatus, showHeaders, showBody bool)
 	return response
 }
 
+// PrintResponse prints the response to the console
 func (res *Response) PrintResponse() {
 	statusColor := color.New(color.FgHiBlue).SprintFunc()
 	protoColor := color.New(color.FgHiCyan).SprintFunc()
@@ -50,6 +65,7 @@ func (res *Response) PrintResponse() {
 	fmt.Println(resSTR)
 }
 
+// storeColorizedHeaders stores the headers in a colorized way
 func storeColorizedHeaders(res *http.Response) string {
 	headers := res.Header
 	keyColor := color.New(color.FgCyan).SprintFunc()
@@ -63,9 +79,11 @@ func storeColorizedHeaders(res *http.Response) string {
 	return resSTR
 }
 
+// storeColorizedBody stores the body in a colorized way
 func storeColorizedBody(res *http.Response) (string, error) {
 	var stringToBePrinted string
 
+	// check the content type of the response body first to know how to colorize it
 	contentType := res.Header.Get("Content-Type")
 	if strings.Contains(contentType, "text/html") {
 		htmlSTR, err := getColorizedHTML(res)
@@ -90,6 +108,7 @@ func storeColorizedBody(res *http.Response) (string, error) {
 	return stringToBePrinted, nil
 }
 
+// storeColorizedBodyAsJSON stores the json data of the body in a colorized way
 func storeColorizedBodyAsJSON(res *http.Response) (string, error) {
 	resBody, _ := readResponseBody(res)
 	resJS, err := js.NewJson(string(resBody))
@@ -104,18 +123,38 @@ func storeColorizedBodyAsJSON(res *http.Response) (string, error) {
 	return resStr, nil
 }
 
+// readResponseBody reads the response body
 func readResponseBody(res *http.Response) ([]byte, error) {
 	defer res.Body.Close()
 
-	body, err := io.ReadAll(res.Body)
-	if err != nil {
-		fmt.Print(err)
-		return nil, err
-	}
+	if res.Header.Get("Content-Encoding") == "gzip" {
+		// Create a gzip reader to decompress the response body
+		reader, err := gzip.NewReader(res.Body)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer reader.Close()
 
-	return body, nil
+		// Read the decompressed data
+		decompressedData, err := ioutil.ReadAll(reader)
+		if err != nil {
+			log.Fatal(err)
+		}
+		return decompressedData, nil
+	} else {
+
+		body, err := io.ReadAll(res.Body)
+		if err != nil {
+			fmt.Print(err)
+			return nil, err
+		}
+
+		fmt.Println(string(body))
+		return body, nil
+	}
 }
 
+// getColorizedHTML colorizes the HTML code
 func getColorizedHTML(res *http.Response) (string, error) {
 	bodyBYTES, err := readResponseBody(res)
 	if err != nil {

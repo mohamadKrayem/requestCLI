@@ -1,6 +1,8 @@
 package requests
 
 import (
+	//"crypto/tls"
+	"crypto/tls"
 	"log"
 	"net/http"
 	"net/url"
@@ -12,6 +14,7 @@ import (
 	rs "github.com/mohamadkrayem/requestCLI/response"
 )
 
+// BaseRequest is the base request object
 type BaseRequest struct {
 	Method    string
 	URL       string
@@ -21,6 +24,7 @@ type BaseRequest struct {
 	BasicAuth auth.BaseAuth
 }
 
+// NewBaseRequest creates a new BaseRequest object
 func NewRequest(method, url string) BaseRequest {
 	return BaseRequest{
 		Method:  method,
@@ -31,6 +35,7 @@ func NewRequest(method, url string) BaseRequest {
 	}
 }
 
+// WithHeaders adds single header to the request
 func (req *BaseRequest) WithHeader(key string, value string) *BaseRequest {
 	if req.Headers == nil {
 		req.Headers = make(map[string]any)
@@ -40,6 +45,7 @@ func (req *BaseRequest) WithHeader(key string, value string) *BaseRequest {
 	return req
 }
 
+// GenerateURL builds the URL for the request
 func GenerateUrl(reqURL string, securityFlag bool, queryParams map[string]string) string {
 	existHTTPS := strings.Contains(reqURL, "https://")
 	existHTTP := strings.Contains(reqURL, "http://")
@@ -59,10 +65,12 @@ func GenerateUrl(reqURL string, securityFlag bool, queryParams map[string]string
 	return reqURL
 }
 
+// AddQueryParams adds a query string to the request url.
 func (req *BaseRequest) AddQueryString(queryParams map[string]any) {
 	req.URL += "?" + GenerateQueryParams(queryParams)
 }
 
+// GenerateQueryParamsForStrings generates query params of map[string]string type.
 func GenerateQueryParamsForStrings(queryParams map[string]string) string {
 	query := url.Values{}
 	for key, value := range queryParams {
@@ -73,8 +81,11 @@ func GenerateQueryParamsForStrings(queryParams map[string]string) string {
 	return queryString
 }
 
+// GenerateQueryParamsForAny generates query params of map[string]any type.
 func GenerateQueryParamsForAny(queryParams map[string]any) string {
 	query := url.Values{}
+
+	// convert any to string
 	for key, value := range queryParams {
 		switch m := value.(type) {
 		case string:
@@ -91,6 +102,7 @@ func GenerateQueryParamsForAny(queryParams map[string]any) string {
 	return query.Encode()
 }
 
+// GenerateQueryParams can be used as the container function for both GenerateQueryParamsForStrings and GenerateQueryParamsForAny.
 func GenerateQueryParams(data interface{}) string {
 	var queryString string
 	switch m := data.(type) {
@@ -102,6 +114,7 @@ func GenerateQueryParams(data interface{}) string {
 	return queryString
 }
 
+// WithHeaders converts json to map and adds it to the request headers.
 func (req *BaseRequest) WithHeaders(jsonData js.Json) (*BaseRequest, error) {
 	jsonMap, err := jsonData.ToMap()
 	if err != nil {
@@ -112,6 +125,7 @@ func (req *BaseRequest) WithHeaders(jsonData js.Json) (*BaseRequest, error) {
 	return req, err
 }
 
+// WithHeadersMap adds the key-value of a map to the request headers.
 func (req *BaseRequest) WithHeadersMap(headersMap *(map[string]string)) *BaseRequest {
 	for key, value := range *headersMap {
 		req.Headers[key] = value
@@ -119,6 +133,7 @@ func (req *BaseRequest) WithHeadersMap(headersMap *(map[string]string)) *BaseReq
 	return req
 }
 
+// WithCookies adds single cookie to the request
 func (req *BaseRequest) WithCookie(key string, value string) *BaseRequest {
 	if req.Cookies == nil {
 		req.Cookies = make(map[string]string)
@@ -128,25 +143,39 @@ func (req *BaseRequest) WithCookie(key string, value string) *BaseRequest {
 	return req
 }
 
+// WithBody adds body to the request based on the request body data type and form flags.
 func (req *BaseRequest) WithBody(body string, form *bool) *BaseRequest {
+
+	// if form flag is true, convert json to map and add it to the request body as query params
+	// in the request body for POST and PUT requests, and in the request url for GET and DELETE requests.
 	if *form {
 		mapBody, err := js.ToMapOptionalJS(body)
 		if err != nil {
 			log.Fatal("Issue in json format")
 		}
+
 		if req.Method == "GET" || req.Method == "DELETE" {
 			req.AddQueryString(mapBody)
 		} else {
 			req.Body = GenerateQueryParams(mapBody)
 		}
 	} else {
+		// If form flag is false, add the json to the request body for Post and Put requests,
+		// and as query params in the request url for Get and Delete requests,
+		// if the request can be parsed as json.
+		// else if the request body is not in json format, send it as text/plain.
+
 		if req.Method == "GET" || req.Method == "Delete" {
 			mapBody, err := js.ToMapOptionalJS(body)
 			if err != nil {
-				log.Fatal("Iusse in json format")
+				log.Println("Your request body is not in json format, so it will be sent as text/plain.")
+				req.Body = body
+				req.Headers["Content-Type"] = "text/plain"
+			} else {
+				req.AddQueryString(mapBody)
 			}
-			req.AddQueryString(mapBody)
 		} else {
+			// send the request body as it for Post and Put requests.
 			req.Body = body
 		}
 	}
@@ -154,8 +183,19 @@ func (req *BaseRequest) WithBody(body string, form *bool) *BaseRequest {
 	return req
 }
 
+// Send function sends the request to the server.
 func (req *BaseRequest) Send(ss, sh, sb bool) (*rs.Response, error) {
 	client := &http.Client{}
+
+	client = &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
+		},
+	}
+
 	body := strings.NewReader(req.Body)
 	reqHttp, err := http.NewRequest(req.Method, req.URL, body)
 	if err != nil {
@@ -191,9 +231,10 @@ func addDefaultHeaders(headers *map[string]any) {
 	if _, ok := (*headers)["Content-Type"]; !ok {
 		(*headers)["Content-Type"] = "application/json"
 	}
-	//if _, ok := (*headers)["Accept-Encoding"]; !ok {
-	//	(*headers)["Accept-Encoding"] = "gzip, deflate"
-	//}
+	/*
+		if _, ok := (*headers)["Accept-Encoding"]; !ok {
+			(*headers)["Accept-Encoding"] = "gzip, deflate, br"
+		}*/
 	if _, ok := (*headers)["Accept"]; !ok {
 		(*headers)["Accept"] = "*/*"
 	}
