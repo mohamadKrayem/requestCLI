@@ -8,6 +8,7 @@ require (
 	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/dlclark/regexp2 v1.4.0 // indirect
 	github.com/fatih/color v1.14.1 // indirect
+	github.com/google/brotli/go/cbrotli v0.0.0-20230201092028-ed1995b6bda1 // indirect
 	github.com/inconshreveable/mousetrap v1.0.1 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect

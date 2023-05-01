@@ -231,10 +231,9 @@ func addDefaultHeaders(headers *map[string]any) {
 	if _, ok := (*headers)["Content-Type"]; !ok {
 		(*headers)["Content-Type"] = "application/json"
 	}
-	/*
-		if _, ok := (*headers)["Accept-Encoding"]; !ok {
-			(*headers)["Accept-Encoding"] = "gzip, deflate, br"
-		}*/
+	if _, ok := (*headers)["Accept-Encoding"]; !ok {
+		(*headers)["Accept-Encoding"] = "gzip, deflate, br"
+	}
 	if _, ok := (*headers)["Accept"]; !ok {
 		(*headers)["Accept"] = "*/*"
 	}

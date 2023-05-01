@@ -2,6 +2,7 @@ package response
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/alecthomas/chroma/quick"
 	"github.com/fatih/color"
+	"github.com/google/brotli/go/cbrotli"
 	js "github.com/mohamadkrayem/requestCLI/formats"
 
 	"net/http"
@@ -127,7 +129,9 @@ func storeColorizedBodyAsJSON(res *http.Response) (string, error) {
 func readResponseBody(res *http.Response) ([]byte, error) {
 	defer res.Body.Close()
 
-	if res.Header.Get("Content-Encoding") == "gzip" {
+	var contentEncoding string = res.Header.Get("Content-Encoding")
+
+	if contentEncoding == "gzip" {
 		// Create a gzip reader to decompress the response body
 		reader, err := gzip.NewReader(res.Body)
 		if err != nil {
@@ -138,9 +142,33 @@ func readResponseBody(res *http.Response) ([]byte, error) {
 		// Read the decompressed data
 		decompressedData, err := ioutil.ReadAll(reader)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatal("error decoding gzip response", err)
 		}
 		return decompressedData, nil
+	} else if contentEncoding == "deflate" {
+		compressedData, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		reader := flate.NewReader(bytes.NewReader(compressedData))
+
+		decompressedData, err := ioutil.ReadAll(reader)
+		if err != nil {
+			log.Fatal("error decoding deflate response", err)
+		}
+
+		defer reader.Close()
+		return decompressedData, nil
+
+	} else if contentEncoding == "br" {
+		reader := cbrotli.NewReader(res.Body)
+		defer reader.Close()
+		resBody, err := ioutil.ReadAll(reader)
+		if err != nil {
+			log.Fatal("error decoding br response", err)
+		}
+		return resBody, nil
 	} else {
 
 		body, err := io.ReadAll(res.Body)
@@ -149,7 +177,6 @@ func readResponseBody(res *http.Response) ([]byte, error) {
 			return nil, err
 		}
 
-		fmt.Println(string(body))
 		return body, nil
 	}
 }
