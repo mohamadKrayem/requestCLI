@@ -75,7 +75,13 @@ func storeColorizedHeaders(res *http.Response) string {
 
 	var resSTR string
 	for key, val := range headers {
-		resSTR += fmt.Sprintf("%s:   %s\n", keyColor(key), valColor(fmt.Sprintf("%v", val[0])))
+		if len(val) > 1 {
+			for _, v := range val {
+				resSTR += fmt.Sprintf("%s:   %s\n", keyColor(key), valColor(v))
+			}
+		} else {
+			resSTR += fmt.Sprintf("%s:   %s\n", keyColor(key), valColor(fmt.Sprintf("%v", val[0])))
+		}
 	}
 	resSTR += "\n"
 	return resSTR

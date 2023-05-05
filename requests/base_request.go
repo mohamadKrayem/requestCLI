@@ -160,10 +160,12 @@ func (req *BaseRequest) WithBody(body string, form *bool) *BaseRequest {
 			req.Body = GenerateQueryParams(mapBody)
 		}
 	} else {
-		// If form flag is false, add the json to the request body for Post and Put requests,
-		// and as query params in the request url for Get and Delete requests,
-		// if the request can be parsed as json.
-		// else if the request body is not in json format, send it as text/plain.
+		/*
+			If form flag is false, add the json to the request body for Post and Put requests,
+			and as query params in the request url for Get and Delete requests,
+			if the request can be parsed as json.
+			else if the request body is not in json format, send it as text/plain.
+		*/
 
 		if req.Method == "GET" || req.Method == "Delete" {
 			mapBody, err := js.ToMapOptionalJS(body)
@@ -240,7 +242,8 @@ func addDefaultHeaders(headers *map[string]any) {
 	if _, ok := (*headers)["Connection"]; !ok {
 		(*headers)["Connection"] = "keep-alive"
 	}
-
-	(*headers)["User-Agent"] = "RequestCLI"
+	if _, ok := (*headers)["User-Agent"]; !ok {
+		(*headers)["User-Agent"] = "RequestCLI"
+	}
 
 }

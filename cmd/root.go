@@ -4,9 +4,10 @@ Copyright © 2023 Mohamad Krayem <mohamadkrayem@email.com>
 package cmd
 
 import (
+	"os"
+
 	json "github.com/mohamadkrayem/requestCLI/formats"
 	"github.com/spf13/cobra"
-	"os"
 )
 
 var (
@@ -22,6 +23,8 @@ var (
 	ShowHeaders bool
 	ShowBody    bool
 	form        bool
+	text        bool
+	reqHeaders  bool
 	headersjs   json.Json
 )
 
@@ -52,17 +55,20 @@ func Execute() {
 func init() {
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.requestCLI.yaml)")
 
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle.")
+	rootCmd.Flags().Bool("toggle", false, "Help message for toggle.")
 	rootCmd.PersistentFlags().BoolVarP(&https, "secure", "s", false, "https or http.")
 	rootCmd.PersistentFlags().BoolVarP(&form, "form", "f", false, "Send a form.")
 	rootCmd.PersistentFlags().StringToStringVarP(&queryParams, "query", "q", nil, "Write your query params.")
 	rootCmd.PersistentFlags().StringToStringVarP(&cookies, "cookie", "c", nil, "Write your cookies.")
 	rootCmd.PersistentFlags().StringToStringVarP(&auth, "auth", "a", nil, "Write your basic auth.")
 	rootCmd.PersistentFlags().BoolVar(&body, "body", false, "Write your nested json.")
-	rootCmd.PersistentFlags().BoolVar(&headers, "headers", false, "Write your nested headers.")
+	rootCmd.PersistentFlags().BoolVar(&headers, "headers", false, "Write your nested headers in json format.")
 	rootCmd.PersistentFlags().StringVarP(&bodyJS, "Nbody", "b", "", "Write your simple body.")
 	rootCmd.PersistentFlags().StringToStringVarP(&headersJS, "Nheaders", "n", nil, "Write your simple headers.")
 	rootCmd.PersistentFlags().BoolVarP(&ShowBody, "sbody", "B", false, "Print only the body.")
 	rootCmd.PersistentFlags().BoolVarP(&ShowHeaders, "sheaders", "H", false, "Print only the headers.")
 	rootCmd.PersistentFlags().BoolVarP(&ShowStatus, "status", "S", false, "Print only the status.")
+	rootCmd.PersistentFlags().BoolVarP(&text, "text", "t", false, "Send plain text")                             // to be implemented
+	rootCmd.PersistentFlags().BoolVarP(&reqHeaders, "reqHeaders", "r", false, "Print only the request headers.") // to be implemented
+
 }
