@@ -65,9 +65,9 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&headers, "headers", false, "Write your nested headers in json format.")
 	rootCmd.PersistentFlags().StringVarP(&bodyJS, "Nbody", "b", "", "Write your simple body.")
 	rootCmd.PersistentFlags().StringToStringVarP(&headersJS, "Nheaders", "n", nil, "Write your simple headers.")
-	rootCmd.PersistentFlags().BoolVarP(&ShowBody, "sbody", "B", false, "Print only the body.")
-	rootCmd.PersistentFlags().BoolVarP(&ShowHeaders, "sheaders", "H", false, "Print only the headers.")
-	rootCmd.PersistentFlags().BoolVarP(&ShowStatus, "status", "S", false, "Print only the status.")
+	rootCmd.PersistentFlags().BoolVarP(&ShowBody, "printB", "B", false, "Print only the body.")
+	rootCmd.PersistentFlags().BoolVarP(&ShowHeaders, "printH", "H", false, "Print only the headers.")
+	rootCmd.PersistentFlags().BoolVarP(&ShowStatus, "printS", "S", false, "Print only the status.")
 	rootCmd.PersistentFlags().BoolVarP(&text, "text", "t", false, "Send plain text")                             // to be implemented
 	rootCmd.PersistentFlags().BoolVarP(&reqHeaders, "reqHeaders", "r", false, "Print only the request headers.") // to be implemented
 

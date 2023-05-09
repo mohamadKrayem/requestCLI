@@ -9,8 +9,7 @@ import (
 type BaseInput struct {
 	Method  string
 	URL     string
-	Proxy   string
-	body    string
+	Body    string
 	Cookies map[string]string
 	Auth    map[string]string
 }

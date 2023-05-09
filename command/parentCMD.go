@@ -3,6 +3,7 @@ package command
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -34,7 +35,7 @@ func Run(args []string, cmd *cobra.Command, bodyJS *string, method string, heade
 
 	resp, err := request.Send(ss, sh, sb)
 	if err != nil {
-		panic(err)
+		log.Fatal("error in sending the request !!!")
 	}
 	resp.PrintResponse()
 }

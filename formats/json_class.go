@@ -25,7 +25,7 @@ func NewJson(jsonInput string) (Json, error) {
 func ToJSONStr(JsonAsMap map[string]string) (string, error) {
 	JsonString, err := json.Marshal(JsonAsMap)
 	if err != nil {
-		panic(err)
+		log.Fatal("error with your json !!!")
 	}
 	return string(JsonString), nil
 }
@@ -33,7 +33,7 @@ func ToJSONStr(JsonAsMap map[string]string) (string, error) {
 func ToJSON(JsonAsMap map[string]string) (Json, error) {
 	JsonString, err := json.Marshal(JsonAsMap)
 	if err != nil {
-		panic(err)
+		log.Fatal("Error with your json !!!")
 	}
 	var JsonJS Json
 	JsonJS, _ = NewJson(string(JsonString))

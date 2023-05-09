@@ -118,7 +118,7 @@ func GenerateQueryParams(data interface{}) string {
 func (req *BaseRequest) WithHeaders(jsonData js.Json) (*BaseRequest, error) {
 	jsonMap, err := jsonData.ToMap()
 	if err != nil {
-		panic(err)
+		log.Fatal("error with your json input !!")
 	}
 
 	req.Headers = jsonMap
@@ -201,7 +201,7 @@ func (req *BaseRequest) Send(ss, sh, sb bool) (*rs.Response, error) {
 	body := strings.NewReader(req.Body)
 	reqHttp, err := http.NewRequest(req.Method, req.URL, body)
 	if err != nil {
-		panic(err)
+		log.Fatal("error in instatiating a new request !!!")
 	}
 
 	addDefaultHeaders(&req.Headers)
