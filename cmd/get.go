@@ -4,9 +4,13 @@ Copyright © 2023 Mohamad Krayem <mohamadkrayem@email.com>
 package cmd
 
 import (
+	"fmt"
+
 	command "github.com/mohamadkrayem/requestCLI/command"
 	"github.com/spf13/cobra"
 )
+
+var get_command command.Command = command.NewCommand()
 
 // getCmd represents the get command
 var GetCmd = &cobra.Command{
@@ -19,13 +23,22 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		/*
-			new command
-		*/
-		command.Run(args, cmd, &bodyJS, "GET", &headersjs, &headersJS, https, ShowStatus, ShowHeaders, ShowBody, &form)
+		fmt.Println("hello")
+		get_command.Method = "GET"
+		get_command.Run(args, cmd)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		command.PersistentPreRun(cmd, args, body, headers, &bodyJS, &headersJS, &headersjs)
+		get_command.Body = Body
+		get_command.Headers = Headers
+		get_command.Form = &Form
+		get_command.Sb = ShowBody
+		get_command.Sh = ShowHeaders
+		get_command.Ss = ShowStatus
+		get_command.Https = Https
+		get_command.BodyJS = &BodyJS
+		get_command.HeadersJS = &HeadersJS
+		get_command.Headersjs = &Headersjs
+		get_command.PersistentPreRun(cmd, args)
 	},
 	Args: cobra.MinimumNArgs(1),
 }

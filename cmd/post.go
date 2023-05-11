@@ -8,6 +8,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var post_command command.Command = command.Command{
+	&BodyJS,
+	"POST",
+	&Headersjs,
+	&HeadersJS,
+	Https,
+	ShowStatus,
+	ShowHeaders,
+	ShowBody,
+	&Form,
+	Body,
+	Headers,
+}
+
 // postCmd represents the post command
 var postCmd = &cobra.Command{
 	Use:   "post",
@@ -19,10 +33,21 @@ Cobra is a CLI library for Go that empowers applications.
 This application is a tool to generate the needed files
 to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		command.Run(args, cmd, &bodyJS, "POST", &headersjs, &headersJS, https, ShowStatus, ShowHeaders, ShowBody, &form)
+		post_command.Run(args, cmd)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		command.PersistentPreRun(cmd, args, body, headers, &bodyJS, &headersJS, &headersjs)
+		post_command.Method = "PUT"
+		post_command.Body = Body
+		post_command.Headers = Headers
+		post_command.Form = &Form
+		post_command.Sb = ShowBody
+		post_command.Sh = ShowHeaders
+		post_command.Ss = ShowStatus
+		post_command.Https = Https
+		post_command.BodyJS = &BodyJS
+		post_command.HeadersJS = &HeadersJS
+		post_command.Headersjs = &Headersjs
+		post_command.PersistentPreRun(cmd, args)
 	},
 	Args: cobra.MinimumNArgs(1),
 }

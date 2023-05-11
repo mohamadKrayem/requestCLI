@@ -12,52 +12,71 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type Command struct{}
+type Command struct {
+	BodyJS    *string
+	Method    string
+	Headersjs *json.Json
+	HeadersJS *map[string]string
+	Https     bool
+	Ss        bool
+	Sh        bool
+	Sb        bool
+	Form      *bool
+	Body      bool
+	Headers   bool
+}
 
-func Run(args []string, cmd *cobra.Command, bodyJS *string, method string, headersjs *json.Json, headersJS *map[string]string, https bool, ss, sh, sb bool, form *bool) {
-	URL := rq.GenerateUrl(args[0], https, nil)
-	request := rq.NewRequest(method, URL)
+func NewCommand() Command {
+	return Command{}
+}
 
-	if *form {
-		*headersJS = make(map[string]string)
-		(*headersJS)["Content-Type"] = "application/x-www-form-urlencoded"
+func (command *Command) Run(args []string, cmd *cobra.Command) {
+	URL := rq.GenerateUrl(args[0], command.Https, nil)
+	request := rq.NewRequest(command.Method, URL)
+
+	if *command.Form {
+		*command.HeadersJS = make(map[string]string)
+		(*command.HeadersJS)["Content-Type"] = "application/x-www-Form-urlencoded"
+		fmt.Println(*command.HeadersJS)
 	}
 
-	if *headersJS != nil {
-		request.WithHeadersMap(headersJS)
-	} else if *headersjs != "" {
-		request.WithHeaders(*headersjs)
+	if *command.HeadersJS != nil {
+		request.WithHeadersMap(command.HeadersJS)
+	} else if *command.Headersjs != "" {
+		request.WithHeaders(*command.Headersjs)
 	}
 
-	if *bodyJS != "" {
-		request.WithBody(*bodyJS, form)
+	if *command.BodyJS != "" {
+		request.WithBody(*command.BodyJS, command.Form)
 	}
 
-	resp, err := request.Send(ss, sh, sb)
+	resp, err := request.Send(command.Ss, command.Sh, command.Sb)
 	if err != nil {
 		log.Fatal("error in sending the request !!!")
 	}
 	resp.PrintResponse()
 }
 
-func PersistentPreRun(cmd *cobra.Command, args []string, body, headers bool, bodyJS *string, headersJS *map[string]string, headersjs *json.Json) {
-	//if no --body or --headers than no need for newScaner();
-	if !body && !headers {
+func (command *Command) PersistentPreRun(cmd *cobra.Command, args []string) {
+	fmt.Println("running")
+	//if no --command.Body or --command.Headers than no need for newScaner();
+	if !command.Body && !command.Headers {
 		return
 	}
 
 	//if nested json; than we need newScanner()
-	if headers && *headersJS == nil {
-		*headersjs, _ = json.NewJson(scanRequest())
+	if command.Headers && *command.HeadersJS == nil {
+		*command.Headersjs, _ = json.NewJson(scanRequest())
 
-		//if simple json (map[string]string) than headersjs = jsonOfMap and no need for newScanner()
-	} else if !headers && *headersJS != nil {
-		*headersjs, _ = json.ToJSON(*headersJS)
+		//if simple json (map[string]string) than command.Headersjs = jsonOfMap and no need for newScanner()
+	} else if !command.Headers && *command.HeadersJS != nil {
+		*command.Headersjs, _ = json.ToJSON(*command.HeadersJS)
 	}
+	fmt.Printf("the body %t\n", command.Body)
 
-	//if --body => we need newScanner()
-	if body && *bodyJS == "" {
-		*bodyJS = scanRequest()
+	//if --command.Body => we need newScanner()
+	if command.Body && *command.BodyJS == "" {
+		*command.BodyJS = scanRequest()
 	}
 }
 
