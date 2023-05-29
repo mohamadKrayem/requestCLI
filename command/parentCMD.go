@@ -24,6 +24,7 @@ type Command struct {
 	Form      *bool
 	Body      bool
 	Headers   bool
+	Redirect  bool
 }
 
 func NewCommand() Command {
@@ -37,7 +38,6 @@ func (command *Command) Run(args []string, cmd *cobra.Command) {
 	if *command.Form {
 		*command.HeadersJS = make(map[string]string)
 		(*command.HeadersJS)["Content-Type"] = "application/x-www-Form-urlencoded"
-		fmt.Println(*command.HeadersJS)
 	}
 
 	if *command.HeadersJS != nil {
@@ -50,7 +50,7 @@ func (command *Command) Run(args []string, cmd *cobra.Command) {
 		request.WithBody(*command.BodyJS, command.Form)
 	}
 
-	resp, err := request.Send(command.Ss, command.Sh, command.Sb)
+	resp, err := request.Send(command.Ss, command.Sh, command.Sb, command.Redirect)
 	if err != nil {
 		log.Fatal("error in sending the request !!!")
 	}
@@ -58,7 +58,6 @@ func (command *Command) Run(args []string, cmd *cobra.Command) {
 }
 
 func (command *Command) PersistentPreRun(cmd *cobra.Command, args []string) {
-	fmt.Println("running")
 	//if no --command.Body or --command.Headers than no need for newScaner();
 	if !command.Body && !command.Headers {
 		return

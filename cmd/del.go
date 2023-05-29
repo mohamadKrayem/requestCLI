@@ -8,47 +8,31 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var del_command command.Command = command.Command{
-	&BodyJS,
-	"DELETE",
-	&Headersjs,
-	&HeadersJS,
-	Https,
-	ShowStatus,
-	ShowHeaders,
-	ShowBody,
-	&Form,
-	Body,
-	Headers,
-}
+var del_command command.Command = command.NewCommand()
 
 // delCmd represents the del command
 var delCmd = &cobra.Command{
 	Use:   "del",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Send a DELETE request to a server.",
 	Run: func(cmd *cobra.Command, args []string) {
 		del_command.Run(args, cmd)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		del_command.Method = "DELETE"
-		del_command.Body = Body
-		del_command.Headers = Headers
-		del_command.Form = &Form
-		del_command.Sb = ShowBody
-		del_command.Sh = ShowHeaders
-		del_command.Ss = ShowStatus
-		del_command.Https = Https
-		del_command.BodyJS = &BodyJS
-		del_command.HeadersJS = &HeadersJS
-		del_command.Headersjs = &Headersjs
+		del_command.Method = "GET"
+		del_command.Body = Command.Body
+		del_command.Headers = Command.Headers
+		del_command.Form = &Command.Form
+		del_command.Sb = Command.ShowBody
+		del_command.Sh = Command.ShowHeaders
+		del_command.Ss = Command.ShowStatus
+		del_command.Https = Command.Https
+		del_command.BodyJS = &Command.BodyJS
+		del_command.HeadersJS = &Command.HeadersJS
+		del_command.Headersjs = &Command.Headersjs
+		del_command.Redirect = Command.Redirect
 		del_command.PersistentPreRun(cmd, args)
 	},
+	Args: cobra.MinimumNArgs(1),
 }
 
 func init() {

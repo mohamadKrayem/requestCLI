@@ -1,5 +1,5 @@
 /*
-Copyright © 2023 NAME HERE <EMAIL ADDRESS>
+Copyright © 2023 Mohamad Krayem <mohamadkrayem@email.com>
 */
 package cmd
 
@@ -8,45 +8,28 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var post_command command.Command = command.Command{
-	&BodyJS,
-	"POST",
-	&Headersjs,
-	&HeadersJS,
-	Https,
-	ShowStatus,
-	ShowHeaders,
-	ShowBody,
-	&Form,
-	Body,
-	Headers,
-}
+var post_command command.Command = command.NewCommand()
 
 // postCmd represents the post command
 var postCmd = &cobra.Command{
 	Use:   "post",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Send a POST request to a server.",
 	Run: func(cmd *cobra.Command, args []string) {
 		post_command.Run(args, cmd)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		post_command.Method = "PUT"
-		post_command.Body = Body
-		post_command.Headers = Headers
-		post_command.Form = &Form
-		post_command.Sb = ShowBody
-		post_command.Sh = ShowHeaders
-		post_command.Ss = ShowStatus
-		post_command.Https = Https
-		post_command.BodyJS = &BodyJS
-		post_command.HeadersJS = &HeadersJS
-		post_command.Headersjs = &Headersjs
+		post_command.Method = "POST"
+		post_command.Body = Command.Body
+		post_command.Headers = Command.Headers
+		post_command.Form = &Command.Form
+		post_command.Sb = Command.ShowBody
+		post_command.Sh = Command.ShowHeaders
+		post_command.Ss = Command.ShowStatus
+		post_command.Https = Command.Https
+		post_command.BodyJS = &Command.BodyJS
+		post_command.HeadersJS = &Command.HeadersJS
+		post_command.Headersjs = &Command.Headersjs
+		post_command.Redirect = Command.Redirect
 		post_command.PersistentPreRun(cmd, args)
 	},
 	Args: cobra.MinimumNArgs(1),

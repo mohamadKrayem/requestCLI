@@ -167,7 +167,7 @@ func (req *BaseRequest) WithBody(body string, form *bool) *BaseRequest {
 			else if the request body is not in json format, send it as text/plain.
 		*/
 
-		if req.Method == "GET" || req.Method == "Delete" {
+		if req.Method == "GET" || req.Method == "Delete" || req.Method == "HEAD" {
 			mapBody, err := js.ToMapOptionalJS(body)
 			if err != nil {
 				log.Println("Your request body is not in json format, so it will be sent as text/plain.")
@@ -186,15 +186,23 @@ func (req *BaseRequest) WithBody(body string, form *bool) *BaseRequest {
 }
 
 // Send function sends the request to the server.
-func (req *BaseRequest) Send(ss, sh, sb bool) (*rs.Response, error) {
+func (req *BaseRequest) Send(ss, sh, sb, redirect bool) (*rs.Response, error) {
 	client := &http.Client{}
 
 	client = &http.Client{
+		// CheckRedirect specifies the policy for handling redirects.
+		// If CheckRedirect is not nil, the client calls it before following an HTTP redirect.
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
+			if redirect {
+				return nil
+			} else {
+				return http.ErrUseLastResponse
+			}
 		},
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
+			// setting it to true will ignore the validity of the certificate, so it will work with self-signed certificates.
+			// it removes the protection against man-in-the-middle attacks (if it is true).
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
 	}
 
