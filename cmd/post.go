@@ -1,41 +1,43 @@
 /*
-Copyright © 2023 NAME HERE <EMAIL ADDRESS>
+Copyright © 2023 Mohamad Krayem <mohamadkrayem@email.com>
 */
 package cmd
 
 import (
-	"github.com/mohamadkrayem/requestCLI/command"
+	auth "github.com/mohamadkrayem/requestCLI/authentication"
+	command "github.com/mohamadkrayem/requestCLI/command"
 	"github.com/spf13/cobra"
 )
+
+var post_command command.Command = command.NewCommand()
 
 // postCmd represents the post command
 var postCmd = &cobra.Command{
 	Use:   "post",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Send a POST request to a server.",
 	Run: func(cmd *cobra.Command, args []string) {
-		command.Run(args, cmd, &bodyJS, "POST", &headersjs, &headersJS, https, ShowStatus, ShowHeaders, ShowBody)
+		post_command.Run(args, cmd)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		command.PersistentPreRun(cmd, args, body, headers, &bodyJS, &headersJS, &headersjs)
+		post_command.Method = "POST"
+		post_command.Body = Command.Body
+		post_command.Headers = Command.Headers
+		post_command.Form = &Command.Form
+		post_command.Sb = Command.ShowBody
+		post_command.Sh = Command.ShowHeaders
+		post_command.Ss = Command.ShowStatus
+		post_command.Https = Command.Https
+		post_command.BodyJS = &Command.BodyJS
+		post_command.HeadersJS = &Command.HeadersJS
+		post_command.Headersjs = &Command.Headersjs
+		post_command.Redirect = Command.Redirect
+		post_command.Cookies = &Command.Cookies
+		post_command.BasicAuth = auth.NewBaseRequestFromMap(Command.Auth)
+		post_command.PersistentPreRun(cmd, args)
 	},
+	Args: cobra.MinimumNArgs(1),
 }
 
 func init() {
 	rootCmd.AddCommand(postCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// postCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// postCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

@@ -4,15 +4,17 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log"
+	"strings"
+
 	"github.com/mattn/go-colorable"
 	"github.com/neilotoole/jsoncolor"
-	"strings"
 )
 
 type Json string
 
 func NewJson(jsonInput string) (Json, error) {
-	jsonString, err := removeNewlinesFromJSONString(jsonInput)
+	jsonString, err := removeNewLinesFromJSONString(jsonInput)
 	if err != nil {
 		return Json(""), err
 	}
@@ -23,7 +25,7 @@ func NewJson(jsonInput string) (Json, error) {
 func ToJSONStr(JsonAsMap map[string]string) (string, error) {
 	JsonString, err := json.Marshal(JsonAsMap)
 	if err != nil {
-		panic(err)
+		log.Fatal("error with your json !!!")
 	}
 	return string(JsonString), nil
 }
@@ -31,7 +33,7 @@ func ToJSONStr(JsonAsMap map[string]string) (string, error) {
 func ToJSON(JsonAsMap map[string]string) (Json, error) {
 	JsonString, err := json.Marshal(JsonAsMap)
 	if err != nil {
-		panic(err)
+		log.Fatal("Error with your json !!!")
 	}
 	var JsonJS Json
 	JsonJS, _ = NewJson(string(JsonString))
@@ -81,7 +83,7 @@ func (js *Json) GetColorizedJSON() (string, error) {
 func encodeMaps(jsonData []byte, enc jsoncolor.Encoder, buf *bytes.Buffer) (string, error) {
 	var jsonMap map[string]any
 	// Unmarshal the JSON data
-	jsonMap, err := toMapOptionalJS(string(jsonData))
+	jsonMap, err := ToMapOptionalJS(string(jsonData))
 	if err != nil {
 		return "", err
 	}
@@ -115,12 +117,11 @@ func encodeArrayOfMaps(jsonData []byte, enc jsoncolor.Encoder, buf *bytes.Buffer
 	return buf.String(), nil
 }
 
-func toMapOptionalJS(js string) (map[string]any, error) {
+func ToMapOptionalJS(js string) (map[string]any, error) {
 	var jsonMap map[string]any
 
 	if err := json.Unmarshal([]byte(js), &jsonMap); err != nil {
-
-		fmt.Println(err)
+		log.Fatal("Error in your json format")
 		return nil, err
 	}
 
@@ -143,7 +144,7 @@ func isArray(js string) bool {
 	return false
 }
 
-func removeNewlinesFromJSONString(jsonStr string) (Json, error) {
+func removeNewLinesFromJSONString(jsonStr string) (Json, error) {
 	// parse the JSON string into an interface{}
 	if string(jsonStr[0]) == "[" {
 		var jsonArrayOfMaps []any
@@ -154,7 +155,7 @@ func removeNewlinesFromJSONString(jsonStr string) (Json, error) {
 		}
 		var modifiedJSONStr []byte
 		// remove newline characters from all string values recursively
-		removeNewlinesRecursively(jsonArrayOfMaps)
+		removeNewLinesRecursively(jsonArrayOfMaps)
 		// encode the modified JSON object back into a string
 		modifiedJSONStr, err = json.Marshal(jsonArrayOfMaps)
 		_ = modifiedJSONStr
@@ -164,8 +165,7 @@ func removeNewlinesFromJSONString(jsonStr string) (Json, error) {
 		return Json(modifiedJSONStr), nil
 	} else {
 		var jsonMap map[string]any
-		jsonMap, err := toMapOptionalJS(jsonStr)
-		_ = jsonMap
+		jsonMap, err := ToMapOptionalJS(jsonStr)
 		if err != nil {
 			return "", err
 		}
@@ -173,18 +173,21 @@ func removeNewlinesFromJSONString(jsonStr string) (Json, error) {
 		var modifiedJSONStr []byte
 
 		// remove newline characters from all string values recursively
-		removeNewlinesRecursively(jsonMap)
+		removeNewLinesRecursively(jsonMap)
 		// encode the modified JSON object back into a string
 		modifiedJSONStr, err = json.Marshal(jsonMap)
-		_ = modifiedJSONStr
 		if err != nil {
+			return "", err
 		}
+
+		//	if err != nil {
+		//	}
 
 		return Json(modifiedJSONStr), nil
 	}
 }
 
-func removeNewlinesRecursively(jsonObj any) {
+func removeNewLinesRecursively(jsonObj any) {
 	switch val := jsonObj.(type) {
 	case string:
 		// replace all newline characters in string values
@@ -192,17 +195,17 @@ func removeNewlinesRecursively(jsonObj any) {
 	case map[string]any:
 		// traverse map values recursively
 		for _, v := range val {
-			removeNewlinesRecursively(v)
+			removeNewLinesRecursively(v)
 		}
 	case []any:
 		// traverse array values recursively
 		for _, v := range val {
-			removeNewlinesRecursively(v)
+			removeNewLinesRecursively(v)
 		}
 	}
 }
 
-func isJson(data string) (bool, error) {
+func IsJson(data string) (bool, error) {
 	var jsonData any
 	err := json.Unmarshal([]byte(data), &jsonData)
 	if err != nil {

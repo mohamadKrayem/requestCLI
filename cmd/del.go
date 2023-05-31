@@ -4,26 +4,38 @@ Copyright © 2023 Mohamad Krayem <mohamadkrayem@email.com>
 package cmd
 
 import (
-	"github.com/mohamadkrayem/requestCLI/command"
+	auth "github.com/mohamadkrayem/requestCLI/authentication"
+	command "github.com/mohamadkrayem/requestCLI/command"
 	"github.com/spf13/cobra"
 )
+
+var del_command command.Command = command.NewCommand()
 
 // delCmd represents the del command
 var delCmd = &cobra.Command{
 	Use:   "del",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Send a DELETE request to a server.",
 	Run: func(cmd *cobra.Command, args []string) {
-		command.Run(args, cmd, &bodyJS, "DELETE", &headersjs, &headersJS, https, ShowStatus, ShowHeaders, ShowBody)
+		del_command.Run(args, cmd)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		command.PersistentPreRun(cmd, args, body, headers, &bodyJS, &headersJS, &headersjs)
+		del_command.Method = "GET"
+		del_command.Body = Command.Body
+		del_command.Headers = Command.Headers
+		del_command.Form = &Command.Form
+		del_command.Sb = Command.ShowBody
+		del_command.Sh = Command.ShowHeaders
+		del_command.Ss = Command.ShowStatus
+		del_command.Https = Command.Https
+		del_command.BodyJS = &Command.BodyJS
+		del_command.HeadersJS = &Command.HeadersJS
+		del_command.Headersjs = &Command.Headersjs
+		del_command.Redirect = Command.Redirect
+		del_command.Cookies = &Command.Cookies
+		del_command.BasicAuth = auth.NewBaseRequestFromMap(Command.Auth)
+		del_command.PersistentPreRun(cmd, args)
 	},
+	Args: cobra.MinimumNArgs(1),
 }
 
 func init() {
