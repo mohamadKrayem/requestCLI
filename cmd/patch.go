@@ -4,6 +4,7 @@ Copyright © 2023 Mohamad Krayem <mohamadkrayem@email.com>
 package cmd
 
 import (
+	auth "github.com/mohamadkrayem/requestCLI/authentication"
 	"github.com/mohamadkrayem/requestCLI/command"
 	"github.com/spf13/cobra"
 )
@@ -30,6 +31,8 @@ var patchCmd = &cobra.Command{
 		patch_command.HeadersJS = &Command.HeadersJS
 		patch_command.Headersjs = &Command.Headersjs
 		patch_command.Redirect = Command.Redirect
+		patch_command.Cookies = &Command.Cookies
+		patch_command.BasicAuth = auth.NewBaseRequestFromMap(Command.Auth)
 		patch_command.PersistentPreRun(cmd, args)
 	},
 }

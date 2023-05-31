@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	auth "github.com/mohamadkrayem/requestCLI/authentication"
 	json "github.com/mohamadkrayem/requestCLI/formats"
 	rq "github.com/mohamadkrayem/requestCLI/requests"
 	"github.com/spf13/cobra"
@@ -25,6 +26,8 @@ type Command struct {
 	Body      bool
 	Headers   bool
 	Redirect  bool
+	Cookies   *map[string]string
+	BasicAuth auth.BaseAuth
 }
 
 func NewCommand() Command {
@@ -38,6 +41,16 @@ func (command *Command) Run(args []string, cmd *cobra.Command) {
 	if *command.Form {
 		*command.HeadersJS = make(map[string]string)
 		(*command.HeadersJS)["Content-Type"] = "application/x-www-Form-urlencoded"
+	}
+
+	if *command.Cookies != nil {
+		for key, value := range *command.Cookies {
+			request.WithCookie(key, value)
+		}
+	}
+
+	if command.BasicAuth.Username != "" && command.BasicAuth.Password != "" {
+		request.BasicAuth = command.BasicAuth
 	}
 
 	if *command.HeadersJS != nil {
@@ -71,7 +84,6 @@ func (command *Command) PersistentPreRun(cmd *cobra.Command, args []string) {
 	} else if !command.Headers && *command.HeadersJS != nil {
 		*command.Headersjs, _ = json.ToJSON(*command.HeadersJS)
 	}
-	fmt.Printf("the body %t\n", command.Body)
 
 	//if --command.Body => we need newScanner()
 	if command.Body && *command.BodyJS == "" {

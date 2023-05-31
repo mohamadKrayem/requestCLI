@@ -93,6 +93,9 @@ func storeColorizedBody(res *http.Response) (string, error) {
 
 	// check the content type of the response body first to know how to colorize it
 	contentType := res.Header.Get("Content-Type")
+	if res.Header.Get("Content-Length") == "" {
+		return "", nil
+	}
 	if strings.Contains(contentType, "text/html") {
 		htmlSTR, err := getColorizedHTML(res)
 		if err != nil {
@@ -118,6 +121,7 @@ func storeColorizedBody(res *http.Response) (string, error) {
 
 // storeColorizedBodyAsJSON stores the json data of the body in a colorized way
 func storeColorizedBodyAsJSON(res *http.Response) (string, error) {
+
 	resBody, _ := readResponseBody(res)
 	resJS, err := js.NewJson(string(resBody))
 	if err != nil {
