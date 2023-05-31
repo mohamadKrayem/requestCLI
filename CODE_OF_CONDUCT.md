@@ -1,42 +1,33 @@
-# Code of Conduct
+# Code of Conduct for RequestCLI
 
-## Introduction
+1. **Inclusivity and Respect:**
+   We welcome and value individuals from all backgrounds and experiences. Treat others with respect, kindness, and inclusivity. Do not discriminate, harass, or engage in any form of offensive behavior.
 
-We, the contributors of Scribely, are committed to creating an open and inclusive community where everyone feels welcome and respected. This Code of Conduct outlines our expectations for all individuals participating in this project. It applies to all interactions within the project's repository, issue tracker, discussions, and any other project-related activities.
+2. **Open and Collaborative Environment:**
+   Foster an environment of open communication and collaboration. Encourage constructive feedback, diverse perspectives, and active participation. Be open to ideas, suggestions, and contributions from others.
 
-## Our Values
+3. **Professionalism:**
+   Maintain a high level of professionalism in all interactions related to RequestCLI. Avoid personal attacks, derogatory language, or any behavior that could create a hostile or uncomfortable environment.
 
-1. **Inclusivity**: We embrace diversity and actively promote an inclusive environment where everyone, regardless of their background, identity, or experience, feels valued and empowered to contribute.
+4. **Intellectual Property:**
+   Respect the intellectual property rights of others. Do not use or distribute copyrighted materials without proper authorization. When contributing to RequestCLI, ensure you have the necessary rights or permissions for any code, documentation, or other content you submit.
 
-2. **Respect**: We treat all individuals with respect and dignity, fostering a culture of kindness, empathy, and understanding. We appreciate different perspectives and engage in constructive discussions.
+5. **Security and Privacy:**
+   Prioritize the security and privacy of users and their data. Follow best practices for data protection, encryption, and secure coding. Report any security vulnerabilities or concerns responsibly and promptly.
 
-3. **Collaboration**: We believe in the power of collaboration and teamwork. We encourage sharing ideas, providing constructive feedback, and supporting each other's growth and learning.
+6. **Transparency and Accountability:**
+   Strive for transparency in project-related discussions and decisions. Take responsibility for your actions, admit mistakes, and learn from them. Address concerns or conflicts constructively and seek resolution through open dialogue.
 
-4. **Openness**: We are committed to transparency and openness in our communication and decision-making processes. We welcome feedback, suggestions, and contributions from the community.
+7. **Informed and Respectful Communication:**
+   Be mindful of the tone and content of your communication. Use clear and concise language, avoid jargon or technical terms when unnecessary, and strive for mutual understanding. Respect the time and availability of others, and use appropriate channels for discussions and inquiries.
 
-## Expected Behavior
+8. **Support and Mentorship:**
+   Encourage a supportive and nurturing environment for learning and growth. Offer assistance, guidance, and mentorship to those who seek it. Be patient and understanding, fostering a positive and inclusive community for everyone involved with RequestCLI.
 
-To maintain a positive and inclusive environment, we expect all participants to:
+9. **Compliance with Laws and Regulations:**
+   Ensure that all activities related to RequestCLI adhere to applicable laws, regulations, and licensing requirements. Respect software licenses, third-party libraries, and dependencies used in the project.
 
-- Be respectful and considerate towards others.
-- Exercise empathy and strive to understand different viewpoints.
-- Use welcoming and inclusive language.
-- Be open to constructive feedback and provide it in a constructive manner.
-- Be mindful of the impact of your words and actions on others.
-- Refrain from any form of harassment, discrimination, or offensive behavior.
-- Respect the project's guidelines, rules, and decisions.
-- Report any concerns, incidents, or violations of this Code of Conduct to the project maintainers.
+10. **Code of Conduct Violations:**
+    Report any violations of this Code of Conduct to the project maintainer or designated individuals. All reports will be handled confidentially and investigated promptly. In cases of confirmed violations, appropriate actions will be taken, which may include warnings, temporary or permanent bans, or other measures deemed necessary.
 
-## Consequences of Unacceptable Behavior
-
-Unacceptable behavior will not be tolerated within the Scribely community. Anyone engaging in such behavior may be subject to consequences, including but not limited to:
-
-- Temporary or permanent exclusion from the project.
-- Removal of contributions.
-- Blocking access to project resources and communication channels.
-
-## Conclusion
-
-By participating in this project, you are expected to uphold and adhere to this Code of Conduct. Let us work together to create a welcoming, inclusive, and collaborative environment for the benefit of all contributors and users.
-
-This Code of Conduct is adapted from the Contributor Covenant, version 2.0, available at [https://www.contributor-covenant.org/version/2/0/code_of_conduct.html](https://www.contributor-covenant.org/version/2/0/code_of_conduct.html).
+By participating in the RequestCLI community, you agree to abide by this Code of Conduct. We strive to create an inclusive, respectful, and collaborative environment where everyone can contribute and benefit from the project's development.
