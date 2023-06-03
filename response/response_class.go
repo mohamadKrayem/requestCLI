@@ -91,11 +91,12 @@ func storeColorizedHeaders(res *http.Response) string {
 func storeColorizedBody(res *http.Response) (string, error) {
 	var stringToBePrinted string
 
-	// check the content type of the response body first to know how to colorize it
-	contentType := res.Header.Get("Content-Type")
-	if res.Header.Get("Content-Length") == "" {
+	if res.Body == nil {
 		return "", nil
 	}
+
+	// check the content type of the response body first to know how to colorize it
+	contentType := res.Header.Get("Content-Type")
 	if strings.Contains(contentType, "text/html") {
 		htmlSTR, err := getColorizedHTML(res)
 		if err != nil {
