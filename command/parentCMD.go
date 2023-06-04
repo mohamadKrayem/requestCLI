@@ -23,6 +23,7 @@ type Command struct {
 	Sh        bool
 	Sb        bool
 	Form      *bool
+	Multipart bool
 	Body      bool
 	Headers   bool
 	Redirect  bool
@@ -41,6 +42,7 @@ func (command *Command) Run(args []string, cmd *cobra.Command) {
 	if *command.Form {
 		*command.HeadersJS = make(map[string]string)
 		(*command.HeadersJS)["Content-Type"] = "application/x-www-Form-urlencoded"
+	} else if command.Multipart {
 	}
 
 	if *command.Cookies != nil {
@@ -60,7 +62,7 @@ func (command *Command) Run(args []string, cmd *cobra.Command) {
 	}
 
 	if *command.BodyJS != "" {
-		request.WithBody(*command.BodyJS, command.Form)
+		request.WithBody(*command.BodyJS, command.Form, command.Multipart)
 	}
 
 	resp, err := request.Send(command.Ss, command.Sh, command.Sb, command.Redirect)

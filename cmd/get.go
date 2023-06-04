@@ -32,6 +32,7 @@ var GetCmd = &cobra.Command{
 		get_command.Headersjs = &Command.Headersjs
 		get_command.Redirect = Command.Redirect
 		get_command.Cookies = &Command.Cookies
+		get_command.Multipart = Command.Multipart
 		get_command.BasicAuth = auth.NewBaseRequestFromMap(Command.Auth)
 		get_command.PersistentPreRun(cmd, args)
 	},

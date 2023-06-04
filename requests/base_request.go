@@ -3,7 +3,9 @@ package requests
 import (
 	//"crypto/tls"
 	"crypto/tls"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -11,27 +13,32 @@ import (
 
 	auth "github.com/mohamadkrayem/requestCLI/authentication"
 	js "github.com/mohamadkrayem/requestCLI/formats"
+	"github.com/mohamadkrayem/requestCLI/input"
 	rs "github.com/mohamadkrayem/requestCLI/response"
 )
 
 // BaseRequest is the base request object
 type BaseRequest struct {
-	Method    string
-	URL       string
-	Headers   map[string]any
-	Cookies   map[string]string
-	Body      string
-	BasicAuth auth.BaseAuth
+	Method        string
+	URL           string
+	Headers       map[string]any
+	Cookies       map[string]string
+	Body          string
+	BasicAuth     auth.BaseAuth
+	MultipartBody io.Reader
+	Writer        *multipart.Writer
 }
 
 // NewBaseRequest creates a new BaseRequest object
 func NewRequest(method, url string) BaseRequest {
 	return BaseRequest{
-		Method:  method,
-		URL:     url,
-		Headers: make(map[string]any),
-		Cookies: make(map[string]string),
-		Body:    "",
+		Method:        method,
+		URL:           url,
+		Headers:       make(map[string]any),
+		Cookies:       make(map[string]string),
+		Body:          "",
+		MultipartBody: nil,
+		Writer:        nil,
 	}
 }
 
@@ -144,7 +151,7 @@ func (req *BaseRequest) WithCookie(key string, value string) *BaseRequest {
 }
 
 // WithBody adds body to the request based on the request body data type and form flags.
-func (req *BaseRequest) WithBody(body string, form *bool) *BaseRequest {
+func (req *BaseRequest) WithBody(body string, form *bool, multipart bool) *BaseRequest {
 
 	// if form flag is true, convert json to map and add it to the request body as query params
 	// in the request body for POST and PUT requests, and in the request url for GET and DELETE requests.
@@ -159,6 +166,11 @@ func (req *BaseRequest) WithBody(body string, form *bool) *BaseRequest {
 		} else {
 			req.Body = GenerateQueryParams(mapBody)
 		}
+	} else if multipart {
+		multipartInput := input.NewMultipartInputInJSONFormat(body)
+		req.MultipartBody = multipartInput.Body
+		req.Writer = multipartInput.Writer
+		req.Headers["Content-Type"] = req.Writer.FormDataContentType()
 	} else {
 		/*
 			If form flag is false, add the json to the request body for Post and Put requests,
@@ -206,8 +218,14 @@ func (req *BaseRequest) Send(ss, sh, sb, redirect bool) (*rs.Response, error) {
 		},
 	}
 
-	body := strings.NewReader(req.Body)
-	reqHttp, err := http.NewRequest(req.Method, req.URL, body)
+	var reqHttp *http.Request
+	var err error
+
+	if req.Writer != nil {
+		reqHttp, err = http.NewRequest(req.Method, req.URL, req.MultipartBody)
+	} else {
+		reqHttp, err = http.NewRequest(req.Method, req.URL, strings.NewReader(req.Body))
+	}
 	if err != nil {
 		log.Fatal("error in instatiating a new request !!!")
 	}

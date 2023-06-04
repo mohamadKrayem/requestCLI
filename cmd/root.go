@@ -10,24 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	QueryParams map[string]string
-	Cookies     map[string]string
-	Auth        map[string]string
-	Body        bool
-	BodyJS      string
-	Headers     bool
-	HeadersJS   map[string]string
-	Https       bool
-	ShowStatus  bool
-	ShowHeaders bool
-	ShowBody    bool
-	Form        bool
-	Text        bool
-	ReqHeaders  bool
-	Headersjs   json.Json
-)
-
 type Cmd struct {
 	Method      string
 	QueryParams map[string]string
@@ -46,6 +28,7 @@ type Cmd struct {
 	ReqHeaders  bool
 	Headersjs   json.Json
 	Redirect    bool
+	Multipart   bool
 }
 
 var Command = Cmd{}
@@ -80,6 +63,7 @@ func init() {
 	rootCmd.Flags().Bool("toggle", false, "Help message for toggle.")
 	rootCmd.PersistentFlags().BoolVarP(&Command.Https, "secure", "s", false, "Send a secure request.")
 	rootCmd.PersistentFlags().BoolVarP(&Command.Form, "form", "f", false, "Send a form.")
+	rootCmd.PersistentFlags().BoolVar(&Command.Multipart, "multi", false, "Send a multipart form.")
 	rootCmd.PersistentFlags().StringToStringVarP(&Command.QueryParams, "query", "q", nil, "Write your query params.")
 	rootCmd.PersistentFlags().StringToStringVarP(&Command.Cookies, "cookie", "c", nil, "Set your cookies.")
 	rootCmd.PersistentFlags().StringToStringVarP(&Command.Auth, "auth", "a", nil, "Set your basic-auth.")

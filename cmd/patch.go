@@ -32,6 +32,7 @@ var patchCmd = &cobra.Command{
 		patch_command.Headersjs = &Command.Headersjs
 		patch_command.Redirect = Command.Redirect
 		patch_command.Cookies = &Command.Cookies
+		patch_command.Multipart = Command.Multipart
 		patch_command.BasicAuth = auth.NewBaseRequestFromMap(Command.Auth)
 		patch_command.PersistentPreRun(cmd, args)
 	},
