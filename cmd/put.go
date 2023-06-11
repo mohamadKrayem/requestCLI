@@ -31,6 +31,7 @@ var putCmd = &cobra.Command{
 		put_command.HeadersJS = &Command.HeadersJS
 		put_command.Headersjs = &Command.Headersjs
 		put_command.Redirect = Command.Redirect
+		put_command.QueryParams = &Command.QueryParams
 		put_command.Cookies = &Command.Cookies
 		put_command.Multipart = Command.Multipart
 		put_command.BasicAuth = auth.NewBaseRequestFromMap(Command.Auth)

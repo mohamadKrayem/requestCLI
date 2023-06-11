@@ -14,21 +14,22 @@ import (
 )
 
 type Command struct {
-	BodyJS    *string
-	Method    string
-	Headersjs *json.Json
-	HeadersJS *map[string]string
-	Https     bool
-	Ss        bool
-	Sh        bool
-	Sb        bool
-	Form      *bool
-	Multipart bool
-	Body      bool
-	Headers   bool
-	Redirect  bool
-	Cookies   *map[string]string
-	BasicAuth auth.BaseAuth
+	BodyJS      *string
+	Method      string
+	Headersjs   *json.Json
+	HeadersJS   *map[string]string
+	Https       bool
+	Ss          bool
+	Sh          bool
+	Sb          bool
+	Form        *bool
+	Multipart   bool
+	Body        bool
+	Headers     bool
+	Redirect    bool
+	Cookies     *map[string]string
+	BasicAuth   auth.BaseAuth
+	QueryParams *map[string]string
 }
 
 func NewCommand() Command {
@@ -36,7 +37,7 @@ func NewCommand() Command {
 }
 
 func (command *Command) Run(args []string, cmd *cobra.Command) {
-	URL := rq.GenerateUrl(args[0], command.Https, nil)
+	URL := rq.GenerateUrl(args[0], command.Https, *command.QueryParams)
 	request := rq.NewRequest(command.Method, URL)
 
 	if *command.Form {

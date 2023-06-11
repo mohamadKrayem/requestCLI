@@ -28,6 +28,7 @@ var patchCmd = &cobra.Command{
 		patch_command.Ss = Command.ShowStatus
 		patch_command.Https = Command.Https
 		patch_command.BodyJS = &Command.BodyJS
+		patch_command.QueryParams = &Command.QueryParams
 		patch_command.HeadersJS = &Command.HeadersJS
 		patch_command.Headersjs = &Command.Headersjs
 		patch_command.Redirect = Command.Redirect

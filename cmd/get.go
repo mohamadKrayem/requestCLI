@@ -26,6 +26,7 @@ var GetCmd = &cobra.Command{
 		get_command.Sb = Command.ShowBody
 		get_command.Sh = Command.ShowHeaders
 		get_command.Ss = Command.ShowStatus
+		get_command.QueryParams = &Command.QueryParams
 		get_command.Https = Command.Https
 		get_command.BodyJS = &Command.BodyJS
 		get_command.HeadersJS = &Command.HeadersJS

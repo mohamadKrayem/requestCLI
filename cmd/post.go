@@ -30,6 +30,7 @@ var postCmd = &cobra.Command{
 		post_command.BodyJS = &Command.BodyJS
 		post_command.HeadersJS = &Command.HeadersJS
 		post_command.Headersjs = &Command.Headersjs
+		post_command.QueryParams = &Command.QueryParams
 		post_command.Redirect = Command.Redirect
 		post_command.Cookies = &Command.Cookies
 		post_command.Multipart = Command.Multipart

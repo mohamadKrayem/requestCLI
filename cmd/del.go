@@ -31,6 +31,7 @@ var delCmd = &cobra.Command{
 		del_command.HeadersJS = &Command.HeadersJS
 		del_command.Headersjs = &Command.Headersjs
 		del_command.Redirect = Command.Redirect
+		del_command.QueryParams = &Command.QueryParams
 		del_command.Cookies = &Command.Cookies
 		del_command.Multipart = Command.Multipart
 		del_command.BasicAuth = auth.NewBaseRequestFromMap(Command.Auth)

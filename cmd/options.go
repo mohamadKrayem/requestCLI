@@ -26,6 +26,7 @@ var optionsCmd = &cobra.Command{
 		options_command.Sb = Command.ShowBody
 		options_command.Sh = Command.ShowHeaders
 		options_command.Ss = Command.ShowStatus
+		options_command.QueryParams = &Command.QueryParams
 		options_command.Https = Command.Https
 		options_command.BodyJS = &Command.BodyJS
 		options_command.HeadersJS = &Command.HeadersJS
