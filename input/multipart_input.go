@@ -82,7 +82,6 @@ func generateLocation(location string) string {
 func (MultipartInput *MultipartInput) generateFiles(body *bytes.Buffer, writer *multipart.Writer) (*bytes.Buffer, *multipart.Writer) {
 	for key, value := range MultipartInput.Files {
 		file, err := os.Open(generateLocation(value))
-		fmt.Println(generateLocation(value))
 		if err != nil {
 			fmt.Println("Failed to open file:", err)
 			return nil, nil
