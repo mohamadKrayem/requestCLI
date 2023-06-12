@@ -19,6 +19,7 @@ var GetCmd = &cobra.Command{
 	Short: "Send a GET request to a server.",
 	Run: func(cmd *cobra.Command, args []string) {
 		get_command.Run(args, cmd)
+		// get the current working directory
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		get_command.Method = "GET"

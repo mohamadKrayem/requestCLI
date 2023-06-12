@@ -59,9 +59,30 @@ func (MultipartInput *MultipartInput) generateData(jsonMap map[string]interface{
 	return body, writer
 }
 
+func generateLocation(location string) string {
+	if location[0] == '/' {
+		return location
+	}
+	if location[0] == '~' {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Println(err)
+			return ""
+		}
+		return home + location[1:]
+	}
+
+	currentDir, err := os.Getwd()
+	if err != nil {
+		fmt.Println(err)
+	}
+	return currentDir + "/" + location
+}
+
 func (MultipartInput *MultipartInput) generateFiles(body *bytes.Buffer, writer *multipart.Writer) (*bytes.Buffer, *multipart.Writer) {
 	for key, value := range MultipartInput.Files {
-		file, err := os.Open(value)
+		file, err := os.Open(generateLocation(value))
+		fmt.Println(generateLocation(value))
 		if err != nil {
 			fmt.Println("Failed to open file:", err)
 			return nil, nil
