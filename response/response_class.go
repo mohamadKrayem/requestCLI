@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/alecthomas/chroma/quick"
+	"github.com/dsnet/compress/brotli"
 	"github.com/fatih/color"
-	"github.com/google/brotli/go/cbrotli"
 	js "github.com/mohamadkrayem/requestCLI/formats"
 
 	"net/http"
@@ -173,9 +173,15 @@ func readResponseBody(res *http.Response) ([]byte, error) {
 		return decompressedData, nil
 
 	} else if contentEncoding == "br" {
-		reader := cbrotli.NewReader(res.Body)
+		// Create a br reader to decompress the response body
+		//create a conf for the reader
+		conf := brotli.ReaderConfig{}
+		reader, err := brotli.NewReader(res.Body, &conf)
+		if err != nil {
+			log.Fatal(err)
+		}
 		defer reader.Close()
-		resBody, err := ioutil.ReadAll(reader)
+		resBody, err := io.ReadAll(reader)
 		if err != nil {
 			log.Fatal("error decoding br response", err)
 		}
