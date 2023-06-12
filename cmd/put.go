@@ -9,6 +9,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// command.Command is a struct that contains all the data entered by the user in a single command
+// it can be found in command/parentCMD.go
 var put_command command.Command = command.NewCommand()
 
 // putCmd represents the put command
