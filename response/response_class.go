@@ -173,9 +173,9 @@ func readResponseBody(res *http.Response) ([]byte, error) {
 		return decompressedData, nil
 
 	} else if contentEncoding == "br" {
-		// Create a br reader to decompress the response body
-		//create a conf for the reader
+		// A brotli reader config
 		conf := brotli.ReaderConfig{}
+		// A brotli reader to decompress the response body
 		reader, err := brotli.NewReader(res.Body, &conf)
 		if err != nil {
 			log.Fatal(err)
