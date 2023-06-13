@@ -3,6 +3,7 @@ package requests
 import (
 	//"crypto/tls"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"log"
 	"mime/multipart"
@@ -233,7 +234,7 @@ func (req *BaseRequest) Send(ss, sh, sb, redirect bool) (*rs.Response, error) {
 	addDefaultHeaders(&req.Headers)
 
 	for key, value := range req.Headers {
-		reqHttp.Header.Add(key, value.(string))
+		reqHttp.Header.Add(key, fmt.Sprintf("%v", value))
 	}
 
 	if len(req.BasicAuth.Username) > 0 {
