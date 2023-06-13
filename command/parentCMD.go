@@ -43,12 +43,6 @@ func (command *Command) Run(args []string, cmd *cobra.Command) {
 	if *command.Form {
 		*command.HeadersJS = make(map[string]string)
 		(*command.HeadersJS)["Content-Type"] = "application/x-www-Form-urlencoded"
-	} else if command.Multipart {
-		if *command.HeadersJS == nil {
-			*command.HeadersJS = make(map[string]string)
-		}
-
-		(*command.HeadersJS)["Content-Type"] = "multipart/form-data"
 	}
 
 	if *command.Cookies != nil {
