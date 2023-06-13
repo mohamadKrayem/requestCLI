@@ -2,46 +2,48 @@
 
 Request-CLI, inspired by tools like httpie and curl, is designed to be beginner-friendly with strong JSON operations, making it easy to execute various HTTP requests. The app offers advanced features such as handling cookies, basic authentication, and the ability to format and colorize outputs.
 
-# Installation 
-Make sure to have go on your system from https://go.dev/doc/install. Check it is installed by running the command 
-```
+## Installation
+
+Make sure to have Go installed on your system. You can download it from [https://go.dev/doc/install](https://go.dev/doc/install). Verify the installation by running the following command in your terminal:
+
+```shell
 $ go version
 ```
-You can install requestCLI by executing the command :
-```
+To install Request-CLI, execute the following command:
+
+```shell
 $ go install github.com/mohamadkrayem/requestCLI
 ```
-There will be a docker container image soon......
-
+(Docker container image will be available soon)
 
 # Usage
 
 Hello World:
-```
+```shell
 $ requestCLI get helloworld.com
 ```
-See also 
-```
+For more information, use the following command:
+```shell
 $ requestCLI --help.
 ```
 
 ## Examples
 
-Custom HTTP method, simple HTTP headers, simple JSON data as the body of the request:
-```
+Custom HTTP method, simple HTTP headers, simple JSON data as the request body
+```shell
 $ requestCLI post example.com -n X-API-Token=123 -b='{"name":"Mohamad"}'
 ```
-If you want to send multiple simple headers:
-```
+To send multiple simple headers:
+```shell
 $ requestCLI post example.com -n X-API-Token-1=123 -n X-API-Token-2=456
 ```
-or simply by separating the headers by a ' , ' :
-```
+Or separate the headers by a comma:
+```shell
 $ requestCLI post example.com -n X-API-Token-1=123,X-API-Token-2=456
 ```
 ---
 Custom HTTP method, complex HTTP headers use the '- -headers' flag, complex JSON data use the '- -body' flag:
-```
+```shell
 $ requestCLI put example.com --headers --body
  {
 	 "X-API-Token": 123
@@ -61,22 +63,22 @@ $ requestCLI put example.com --headers --body
 ```
 ---
 Custom HTTP method, simple HTTP headers, with Cookies:
-```
+```shell
 $ requestCLI get example.com -n X-API-Token=123 -c key=value 
 ```
 ---
 Custom HTTP GET method, with Basic authentication:
-```
+```shell
 $ requestCLI get example.com --auth username=password
 ```
 ---
 Custom HTTP GET method, Querystring parameters:
-```
+```shell
 $ requestCLI get example.com -q q=queryExample,per_page=1
 ```
 ---
 Custom HTTP method, Output option:
-```
+```shell
 $ requestCLI get example.com -H
 ```
 - -H or --printH for headers
@@ -84,21 +86,21 @@ $ requestCLI get example.com -H
 - -S or --printS for status
 ---
 Delete:
-```
+```shell
 $ requestCLI delete example.com
 ```
 Post:
-```
+```shell
 $ requestCLI post "http://example.com" -b='{"name":"Example"}'
 ```
 Put:
-```
+```shell
 $ requestCLI put example.com -b='{"name":"Example"}'
 ```
 ---
 ## Sending forms and files
 Custom http request including form data with files:
-```
+```shell
 $ requestCLI post example.com/form --multi --body
 {  
 	"@!image":"~/justForTesting/OIG.jpeg",  
@@ -116,7 +118,7 @@ If your path starts with:
 - string : the app will search in the current working directory.
 --- 
 To send normal form:
-```
+```shell
 $ requestCLI post example.com -f --body
 {
 	"key1":"value",
