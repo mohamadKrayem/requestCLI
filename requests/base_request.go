@@ -180,7 +180,7 @@ func (req *BaseRequest) WithBody(body string, form *bool, multipart bool) *BaseR
 			else if the request body is not in json format, send it as text/plain.
 		*/
 
-		if req.Method == "GET" || req.Method == "Delete" || req.Method == "HEAD" {
+		if req.Method == "GET" || req.Method == "Delete" || req.Method == "HEAD" || req.Method == "Trace" || req.Method == "Connect" || req.Method == "Options" {
 			mapBody, err := js.ToMapOptionalJS(body)
 			if err != nil {
 				log.Println("Your request body is not in json format, so it will be sent as text/plain.")
