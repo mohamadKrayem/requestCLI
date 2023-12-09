@@ -21,7 +21,7 @@ var delCmd = &cobra.Command{
 		del_command.Run(args, cmd)
 	},
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		del_command.Method = "GET"
+		del_command.Method = "DELETE"
 		del_command.Body = Command.Body
 		del_command.Headers = Command.Headers
 		del_command.Form = &Command.Form
