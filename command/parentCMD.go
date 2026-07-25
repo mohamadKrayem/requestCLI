@@ -11,8 +11,9 @@ import (
 	"time"
 
 	auth "github.com/mohamadkrayem/requestCLI/authentication"
+	"github.com/mohamadkrayem/requestCLI/core"
 	"github.com/mohamadkrayem/requestCLI/formats"
-	rq "github.com/mohamadkrayem/requestCLI/requests"
+	"github.com/mohamadkrayem/requestCLI/render"
 )
 
 // maxInputSize caps a single stdin-supplied JSON document.
@@ -37,6 +38,7 @@ type Options struct {
 	ShowStatus  bool
 	ShowHeaders bool
 	ShowBody    bool
+	Style       string
 
 	Form      bool
 	Multipart bool
@@ -49,12 +51,12 @@ func Run(method string, args []string, opts *Options) error {
 		return errors.New("a URL is required")
 	}
 
-	url, err := rq.GenerateUrl(args[0], opts.HTTP, opts.QueryParams)
+	url, err := core.GenerateUrl(args[0], opts.HTTP, opts.QueryParams)
 	if err != nil {
 		return err
 	}
 
-	request := rq.NewRequest(method, url)
+	request := core.NewRequest(method, url)
 
 	for key, value := range opts.Cookies {
 		request.WithCookie(key, value)
@@ -80,19 +82,24 @@ func Run(method string, args []string, opts *Options) error {
 		}
 	}
 
-	resp, err := request.Send(rq.SendOptions{
-		ShowStatus:  opts.ShowStatus,
-		ShowHeaders: opts.ShowHeaders,
-		ShowBody:    opts.ShowBody,
-		Redirect:    opts.Redirect,
-		Insecure:    opts.Insecure,
-		Timeout:     opts.Timeout,
+	result, err := request.Send(core.SendOptions{
+		Redirect: opts.Redirect,
+		Insecure: opts.Insecure,
+		Timeout:  opts.Timeout,
 	})
 	if err != nil {
 		return err
 	}
 
-	resp.PrintResponse()
+	// Colour is resolved here, once, and passed down. No renderer decides for
+	// itself whether it is talking to a terminal.
+	fmt.Println(render.Render(result, render.Options{
+		ShowStatus:  opts.ShowStatus,
+		ShowHeaders: opts.ShowHeaders,
+		ShowBody:    opts.ShowBody,
+		Color:       render.ColorEnabled(os.Stdout),
+		Style:       opts.Style,
+	}))
 	return nil
 }
 

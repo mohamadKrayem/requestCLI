@@ -9,16 +9,21 @@ here is layering, error handling, and safe network defaults.
 ```
 main.go
   └── cmd/          flag definitions and one subcommand per HTTP verb
-        └── command/    turns flags into a request, prints the response
-              └── requests/   builds and sends the HTTP request
-                    ├── formats/    JSON parsing, normalizing, colorizing
-                    ├── input/      multipart form and file bodies
-                    ├── authentication/  credentials
-                    └── response/   decodes, colorizes and renders the response
+        └── command/    turns flags into a request, renders the result
+              ├── core/     builds and sends the request -> Result
+              │     ├── formats/         json validation for command-line input
+              │     ├── input/           multipart form and file bodies
+              │     └── authentication/  credentials
+              └── render/   Result -> terminal string
 ```
 
 Dependencies point one way, downward. Nothing below `command/` knows about
 cobra or about flags.
+
+`core` and `render` are siblings and neither imports the other. That separation
+is the point of the whole layout: `core` produces structured data, `render`
+turns it into text, and any future front-end (a TUI, an editor plugin, a `--json`
+mode) attaches to `core` without inheriting a terminal.
 
 ### cmd/
 
@@ -34,17 +39,27 @@ request; `PrepareInput` reads multi-line JSON documents from stdin for
 `--headers` / `--body` using a single shared scanner, so two documents can be
 read from one stream.
 
-### requests/
+### core/
 
 `BaseRequest` accumulates method, URL, headers, cookies, auth and body.
-`SendOptions` carries per-invocation transport settings. URL construction goes
-through `net/url` rather than string concatenation.
+`SendOptions` carries per-invocation transport settings only — what to display
+is not a transport concern. URL construction goes through `net/url` rather than
+string concatenation.
 
-### response/
+`Send` returns a `Result`: status, protocol, real `http.Header`, the
+decompressed body as `[]byte`, and timing. The body is never decoded here.
+`core` must not import `render`, `chroma`, or any terminal package.
 
-Reads the body, decompressing gzip, deflate or brotli, then colorizes according
-to the response `Content-Type`. The three print flags are a selection set and
-combine.
+### render/
+
+`Render(*core.Result, Options) string` is a pure function: no globals, no TTY
+probing, no hidden state. Colour is decided once by the caller (via
+`render.ColorEnabled`) and passed in as a bool, which is what makes the output
+testable without a terminal and re-renderable on resize.
+
+JSON is formatted straight from the raw bytes; everything else with a known
+content type goes through a chroma lexer. The three print flags are a selection
+set and combine.
 
 ## Error handling
 
@@ -114,3 +129,31 @@ brotli support, which the tool already advertises.
 
 2026-07-25 — Keep `--secure` and `--Redirect` as deprecated flags — renaming
 outright would break existing scripts for no functional gain.
+
+2026-07-25 — Split `core` (structured `Result`) from `render` (pure function to
+text) — the previous design executed and printed in one step and stored
+pre-rendered ANSI strings, which no second front-end can consume. Doing this
+after a TUI existed would mean writing the TUI twice.
+
+2026-07-25 — Never decode a response body in order to display it — the old path
+unmarshalled into `map[string]any` and re-marshalled, which rounded integers
+through `float64`, sorted keys alphabetically and collapsed duplicates. The body
+shown was never the body received. `tidwall/pretty` formats the raw bytes
+instead, in less code.
+
+2026-07-25 — Delete `removeNewLines` — it stripped `\n` out of string *values*,
+corrupting description and markdown fields. It was meant to normalize multi-line
+stdin, but `scanRequest` already joins those lines, so it was redundant as well
+as destructive. `formats.NewJson` now validates with `json.Compact`.
+
+2026-07-25 — Resolve colour once at the boundary and pass it down as a bool —
+each renderer used to decide for itself, so JSON honoured the terminal check and
+HTML did not; piping HTML emitted raw escape sequences. `NO_COLOR` is now
+honoured too.
+
+2026-07-25 — Describe binary bodies instead of printing them — a raw image or
+archive dumped to stdout leaves the terminal in a broken state.
+
+2026-07-25 — Sort header keys when rendering — Go map iteration is randomized,
+so two renders of one response differed. Snapshot diffing depends on this being
+stable.

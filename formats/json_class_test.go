@@ -48,47 +48,51 @@ func TestNewJsonAcceptsObjectsAndArrays(t *testing.T) {
 	}
 }
 
-// Regression: removeNewLines assigned to the loop variable, so it never
-// actually stripped anything.
-func TestNewJsonStripsNewlinesFromValues(t *testing.T) {
+// Regression, inverted: removeNewLines used to strip \n out of string *data*,
+// silently corrupting any description or markdown field on its way to the
+// server. It was meant to normalize multi-line stdin input, but scanRequest
+// already joins those lines, so it was redundant as well as destructive.
+func TestNewJsonPreservesNewlinesInsideValues(t *testing.T) {
 	got, err := NewJson(`{"a":"x\ny"}`)
 	if err != nil {
 		t.Fatalf("NewJson: %v", err)
 	}
-	if strings.Contains(string(got), `\n`) {
-		t.Errorf("newline not stripped: got %q", got)
-	}
-	if string(got) != `{"a":"xy"}` {
-		t.Errorf("got %q, want %q", got, `{"a":"xy"}`)
+	if string(got) != `{"a":"x\ny"}` {
+		t.Errorf("got %q, want the newline preserved", got)
 	}
 }
 
-func TestNewJsonStripsNewlinesInsideNestedStructures(t *testing.T) {
+func TestNewJsonPreservesNewlinesInsideNestedStructures(t *testing.T) {
 	got, err := NewJson(`{"outer":{"inner":["a\nb"]}}`)
 	if err != nil {
 		t.Fatalf("NewJson: %v", err)
 	}
-	if strings.Contains(string(got), `\n`) {
-		t.Errorf("nested newline not stripped: got %q", got)
+	if !strings.Contains(string(got), `a\nb`) {
+		t.Errorf("nested newline lost: got %q", got)
 	}
 }
 
-func TestIsArray(t *testing.T) {
-	tests := []struct {
-		in   string
-		want bool
-	}{
-		{in: "", want: false}, // must not panic
-		{in: "   ", want: false},
-		{in: "[1]", want: true},
-		{in: "  [1]", want: true},
-		{in: `{"a":1}`, want: false},
-	}
+// Compacting rather than decoding also keeps large integers and key order
+// intact, which the old marshal round trip destroyed.
+func TestNewJsonPreservesLargeIntegersAndKeyOrder(t *testing.T) {
+	const in = `{"zebra":1234567890123456789,"apple":2}`
 
-	for _, tt := range tests {
-		if got := isArray(tt.in); got != tt.want {
-			t.Errorf("isArray(%q) = %v, want %v", tt.in, got, tt.want)
-		}
+	got, err := NewJson(in)
+	if err != nil {
+		t.Fatalf("NewJson: %v", err)
+	}
+	if string(got) != in {
+		t.Errorf("NewJson(%q) = %q, want it unchanged", in, got)
+	}
+}
+
+func TestNewJsonCompactsWhitespace(t *testing.T) {
+	got, err := NewJson("{\n  \"a\": 1,\n  \"b\": 2\n}")
+	if err != nil {
+		t.Fatalf("NewJson: %v", err)
+	}
+	if string(got) != `{"a":1,"b":2}` {
+		t.Errorf("got %q, want it compacted onto one line", got)
 	}
 }
 
@@ -113,18 +117,5 @@ func TestToJSON(t *testing.T) {
 	}
 	if string(got) != `{"X-Token":"123"}` {
 		t.Errorf("ToJSON = %q", got)
-	}
-}
-
-func TestGetColorizedJSONHandlesObjectsAndArrays(t *testing.T) {
-	for _, in := range []string{`{"a":1}`, `[{"a":1}]`} {
-		js := Json(in)
-		out, err := js.GetColorizedJSON()
-		if err != nil {
-			t.Fatalf("GetColorizedJSON(%q): %v", in, err)
-		}
-		if !strings.Contains(out, "a") {
-			t.Errorf("GetColorizedJSON(%q) = %q, expected it to contain the key", in, out)
-		}
 	}
 }

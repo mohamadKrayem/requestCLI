@@ -80,9 +80,35 @@ Every command takes exactly one URL.
 | `--http`     |       | Force plain HTTP instead of HTTPS.                          |
 | `--insecure` | `-k`  | Skip TLS certificate verification (dangerous).              |
 | `--timeout`  |       | Overall request timeout (default `30s`).                    |
+| `--style`    |       | Syntax highlighting theme (default `monokai`).               |
 
 The `-B`, `-H` and `-S` flags combine: `-H -B` prints headers and body. Passing
 none of them prints everything.
+
+### Output
+
+Response bodies are shown exactly as the server sent them. JSON is pretty-printed
+straight from the raw bytes, so large integers keep their precision, keys keep
+their original order, and duplicate keys are not collapsed — the display never
+decodes the payload.
+
+JSON, HTML, XML, YAML, JavaScript, CSS, TOML, SQL, Markdown and GraphQL are
+syntax-highlighted. Pass `--style` to change the theme.
+
+Colour is enabled only when stdout is a terminal, and is disabled entirely if
+`NO_COLOR` is set or `TERM=dumb`, so piped output is always clean:
+
+```shell
+$ requestCLI get example.com -B | grep name   # no escape sequences
+$ NO_COLOR=1 requestCLI get example.com -B
+```
+
+Binary responses are described rather than dumped:
+
+```shell
+$ requestCLI get example.com/logo.png -B
+[binary data: 12.4 kB, image/png — not shown]
+```
 
 ### URL scheme
 
@@ -248,6 +274,8 @@ $ make server   # start the fixture server for manual testing
 
 - Golang
 - Cobra
+- chroma (syntax highlighting)
+- tidwall/pretty (lossless JSON formatting)
 
 ## Future Features
 

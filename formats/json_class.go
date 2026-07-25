@@ -1,4 +1,8 @@
-// Package formats handles parsing, normalizing and colorizing JSON documents.
+// Package formats validates and normalizes JSON supplied on the command line.
+//
+// It is an input-side package only. Rendering a response never comes through
+// here: decoding a payload in order to display it is what destroyed number
+// precision, key order and duplicate keys. See render/json.go.
 package formats
 
 import (
@@ -7,17 +11,27 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/mattn/go-colorable"
-	"github.com/neilotoole/jsoncolor"
 )
 
 // Json holds a JSON document as a string.
 type Json string
 
-// NewJson validates and normalizes a JSON document.
+// NewJson validates a JSON document and compacts it onto a single line.
+//
+// It uses json.Compact rather than decoding and re-encoding, so number literals
+// and key order are preserved exactly as typed. A large integer written by hand
+// reaches the server unchanged instead of being rounded through float64.
 func NewJson(jsonInput string) (Json, error) {
-	return removeNewLinesFromJSONString(jsonInput)
+	trimmed := strings.TrimSpace(jsonInput)
+	if trimmed == "" {
+		return "", errors.New("empty json input")
+	}
+
+	var buf bytes.Buffer
+	if err := json.Compact(&buf, []byte(trimmed)); err != nil {
+		return "", fmt.Errorf("parsing json: %w", err)
+	}
+	return Json(buf.String()), nil
 }
 
 // ToJSON marshals a string map into a Json value.
@@ -35,102 +49,13 @@ func (js *Json) ToMap() (map[string]any, error) {
 }
 
 // ToMapOptionalJS decodes a JSON object into a map.
+//
+// This is for values that genuinely have to become Go data — header names,
+// form fields, query parameters — never for display.
 func ToMapOptionalJS(js string) (map[string]any, error) {
 	var jsonMap map[string]any
 	if err := json.Unmarshal([]byte(js), &jsonMap); err != nil {
 		return nil, fmt.Errorf("parsing json object: %w", err)
 	}
 	return jsonMap, nil
-}
-
-// GetColorizedJSON renders the document indented, and colorized when stdout is a terminal.
-func (js *Json) GetColorizedJSON() (string, error) {
-	var buf bytes.Buffer
-	jsonData := string(*js)
-
-	enc := jsoncolor.NewEncoder(&buf)
-
-	// Only colorize when stdout is a color terminal, so piped output stays clean.
-	if jsoncolor.IsColorTerminal(colorable.NewColorableStdout()) {
-		enc.SetColors(&jsoncolor.Colors{
-			Null:   jsoncolor.Color("\x1b[32m"), // green
-			Bool:   jsoncolor.Color("\x1b[36m"), // cyan
-			String: jsoncolor.Color("\x1b[92m"), // bright green
-			Number: jsoncolor.Color("\x1b[33m"), // yellow
-			Key:    jsoncolor.Color("\x1b[94m"), // bright blue
-		})
-	}
-	enc.SetIndent("", "  ")
-
-	decoded, err := decode(jsonData)
-	if err != nil {
-		return "", err
-	}
-
-	if err := enc.Encode(decoded); err != nil {
-		return "", fmt.Errorf("encoding json for display: %w", err)
-	}
-	return buf.String(), nil
-}
-
-// decode parses a document as either an array or an object, whichever it opens with.
-func decode(jsonStr string) (any, error) {
-	if isArray(jsonStr) {
-		return toArrayOfMaps(jsonStr)
-	}
-	return ToMapOptionalJS(jsonStr)
-}
-
-func toArrayOfMaps(js string) ([]any, error) {
-	var arrayOfMaps []any
-	if err := json.Unmarshal([]byte(js), &arrayOfMaps); err != nil {
-		return nil, fmt.Errorf("parsing json array: %w", err)
-	}
-	return arrayOfMaps, nil
-}
-
-// isArray reports whether the document's first non-space character opens an array.
-func isArray(js string) bool {
-	trimmed := strings.TrimSpace(js)
-	return len(trimmed) > 0 && trimmed[0] == '['
-}
-
-func removeNewLinesFromJSONString(jsonStr string) (Json, error) {
-	if strings.TrimSpace(jsonStr) == "" {
-		return "", errors.New("empty json input")
-	}
-
-	decoded, err := decode(jsonStr)
-	if err != nil {
-		return "", err
-	}
-
-	modifiedJSONStr, err := json.Marshal(removeNewLines(decoded))
-	if err != nil {
-		return "", fmt.Errorf("re-encoding json: %w", err)
-	}
-	return Json(modifiedJSONStr), nil
-}
-
-// removeNewLines strips newlines from every string value in the tree.
-//
-// It returns the cleaned value rather than mutating in place: a string reached
-// through an `any` is a copy, so assigning to the loop variable would be a no-op.
-func removeNewLines(jsonObj any) any {
-	switch val := jsonObj.(type) {
-	case string:
-		return strings.ReplaceAll(val, "\n", "")
-	case map[string]any:
-		for k, v := range val {
-			val[k] = removeNewLines(v)
-		}
-		return val
-	case []any:
-		for i, v := range val {
-			val[i] = removeNewLines(v)
-		}
-		return val
-	default:
-		return jsonObj
-	}
 }

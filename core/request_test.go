@@ -1,4 +1,4 @@
-package requests
+package core
 
 import (
 	"io"
@@ -190,7 +190,7 @@ func TestSendUsesTheGivenMethod(t *testing.T) {
 			defer srv.Close()
 
 			req := NewRequest(method, srv.URL)
-			if _, err := req.Send(SendOptions{ShowStatus: true}); err != nil {
+			if _, err := req.Send(SendOptions{}); err != nil {
 				t.Fatalf("Send: %v", err)
 			}
 			if got != method {
@@ -209,7 +209,7 @@ func TestSendOmitsContentTypeOnBodylessRequest(t *testing.T) {
 	defer srv.Close()
 
 	req := NewRequest(http.MethodGet, srv.URL)
-	if _, err := req.Send(SendOptions{ShowStatus: true}); err != nil {
+	if _, err := req.Send(SendOptions{}); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if !seen {
@@ -233,7 +233,7 @@ func TestSendSetsContentTypeWhenBodyPresent(t *testing.T) {
 	if err := req.WithBody(`{"a":1}`, false, false); err != nil {
 		t.Fatalf("WithBody: %v", err)
 	}
-	if _, err := req.Send(SendOptions{ShowStatus: true}); err != nil {
+	if _, err := req.Send(SendOptions{}); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 
@@ -261,7 +261,7 @@ func TestSendAppliesBasicAuthAndCookies(t *testing.T) {
 	req.BasicAuth.Password = "secret"
 	req.WithCookie("session", "abc123")
 
-	if _, err := req.Send(SendOptions{ShowStatus: true}); err != nil {
+	if _, err := req.Send(SendOptions{}); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if !ok || user != "me" || pass != "secret" {
@@ -280,7 +280,7 @@ func TestSendHonoursTimeout(t *testing.T) {
 
 	req := NewRequest(http.MethodGet, srv.URL)
 	start := time.Now()
-	_, err := req.Send(SendOptions{ShowStatus: true, Timeout: 50 * time.Millisecond})
+	_, err := req.Send(SendOptions{Timeout: 50 * time.Millisecond})
 	if err == nil {
 		t.Fatal("expected a timeout error")
 	}
@@ -300,21 +300,21 @@ func TestSendDoesNotFollowRedirectsByDefault(t *testing.T) {
 	defer srv.Close()
 
 	req := NewRequest(http.MethodGet, srv.URL+"/")
-	resp, err := req.Send(SendOptions{ShowStatus: true})
+	result, err := req.Send(SendOptions{})
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
-	if !strings.Contains(resp.Status, "302") {
-		t.Errorf("status = %q, want the 302 itself", resp.Status)
+	if result.StatusCode != http.StatusFound {
+		t.Errorf("status = %d, want the 302 itself", result.StatusCode)
 	}
 
 	req = NewRequest(http.MethodGet, srv.URL+"/")
-	resp, err = req.Send(SendOptions{ShowStatus: true, Redirect: true})
+	result, err = req.Send(SendOptions{Redirect: true})
 	if err != nil {
 		t.Fatalf("Send with redirect: %v", err)
 	}
-	if !strings.Contains(resp.Status, "418") {
-		t.Errorf("status = %q, want the followed 418", resp.Status)
+	if result.StatusCode != http.StatusTeapot {
+		t.Errorf("status = %d, want the followed 418", result.StatusCode)
 	}
 }
 
@@ -326,12 +326,28 @@ func TestSendVerifiesTLSByDefault(t *testing.T) {
 	defer srv.Close()
 
 	req := NewRequest(http.MethodGet, srv.URL)
-	if _, err := req.Send(SendOptions{ShowStatus: true}); err == nil {
+	if _, err := req.Send(SendOptions{}); err == nil {
 		t.Fatal("self-signed certificate was accepted; verification is not enabled by default")
 	}
 
 	req = NewRequest(http.MethodGet, srv.URL)
-	if _, err := req.Send(SendOptions{ShowStatus: true, Insecure: true}); err != nil {
+	if _, err := req.Send(SendOptions{Insecure: true}); err != nil {
 		t.Fatalf("--insecure should accept a self-signed certificate, got: %v", err)
+	}
+}
+
+func TestSendRecordsTiming(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(10 * time.Millisecond)
+	}))
+	defer srv.Close()
+
+	req := NewRequest(http.MethodGet, srv.URL)
+	result, err := req.Send(SendOptions{})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if result.Timing.Total < 10*time.Millisecond {
+		t.Errorf("Timing.Total = %v, want at least the 10ms the handler slept", result.Timing.Total)
 	}
 }

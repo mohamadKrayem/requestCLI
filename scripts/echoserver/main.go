@@ -52,6 +52,10 @@ func main() {
 	mux.HandleFunc("/status/", status)
 	mux.HandleFunc("/basic-auth", basicAuth)
 	mux.HandleFunc("/multipart", multipartEcho)
+	mux.HandleFunc("/fidelity", serveFidelity)
+	mux.HandleFunc("/binary", serveBinary)
+	mux.HandleFunc("/xml", serveXML)
+	mux.HandleFunc("/yaml", serveYAML)
 
 	cert, err := selfSignedCert()
 	if err != nil {
@@ -128,6 +132,41 @@ func serveJSON(w http.ResponseWriter, r *http.Request) {
 		"tags":    []string{"a", "b"},
 		"nested":  map[string]any{"deep": map[string]any{"deeper": 1}},
 	})
+}
+
+// serveFidelity returns a body written as raw bytes rather than marshalled, so
+// it can carry the things a decode/re-encode round trip destroys: an integer
+// too large for float64, deliberately unsorted keys, a newline inside a string
+// value, and a duplicate key.
+func serveFidelity(w http.ResponseWriter, r *http.Request) {
+	const body = `{"zebra":1,"id":1234567890123456789,"apple":2,` +
+		`"note":"line1\nline2","dup":1,"dup":2}`
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(body))
+}
+
+// serveBinary returns a PNG header followed by NUL bytes: printing it raw
+// leaves a terminal in a broken state.
+func serveBinary(w http.ResponseWriter, r *http.Request) {
+	body := append([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, make([]byte, 2048)...)
+
+	w.Header().Set("Content-Type", "image/png")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+}
+
+func serveXML(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/xml")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`<?xml version="1.0"?><catalog><book id="1">highlighted</book></catalog>`))
+}
+
+func serveYAML(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("name: Mohamad\ntags:\n  - a\n  - b\nhighlighted: true\n"))
 }
 
 func serveHTML(w http.ResponseWriter, r *http.Request) {

@@ -11,7 +11,8 @@ import (
 	"os"
 
 	"github.com/mohamadkrayem/requestCLI/command"
-	"github.com/mohamadkrayem/requestCLI/requests"
+	"github.com/mohamadkrayem/requestCLI/core"
+	"github.com/mohamadkrayem/requestCLI/render"
 	"github.com/spf13/cobra"
 )
 
@@ -26,7 +27,7 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:     "requestCLI",
-	Version: requests.Version,
+	Version: core.Version,
 	Short:   "RequestCLI is a CLI tool that allows you to send HTTP requests to a server.",
 	Long: `RequestCLI is a CLI tool that allows you to send HTTP requests to a server.
 It is a simple tool that allows you to send requests with different methods,
@@ -99,7 +100,7 @@ func init() {
 
 	flags.BoolVar(&opts.HTTP, "http", false, "Send over plain HTTP instead of HTTPS.")
 	flags.BoolVarP(&opts.Insecure, "insecure", "k", false, "Skip TLS certificate verification (dangerous).")
-	flags.DurationVar(&opts.Timeout, "timeout", requests.DefaultTimeout, "Overall request timeout.")
+	flags.DurationVar(&opts.Timeout, "timeout", core.DefaultTimeout, "Overall request timeout.")
 
 	flags.BoolVarP(&opts.Form, "form", "f", false, "Send a url-encoded form.")
 	flags.BoolVar(&opts.Multipart, "multi", false, "Send a multipart form.")
@@ -118,6 +119,7 @@ func init() {
 	flags.BoolVarP(&opts.ShowStatus, "printS", "S", false, "Print the status line of the response.")
 
 	flags.BoolVar(&opts.Redirect, "redirect", false, "Follow redirects.")
+	flags.StringVar(&opts.Style, "style", render.DefaultStyle, "Syntax highlighting theme for non-json bodies.")
 
 	// Deprecated: HTTPS is now the default, so --secure is a no-op.
 	flags.BoolVarP(&legacySecure, "secure", "s", false, "Deprecated: HTTPS is the default.")

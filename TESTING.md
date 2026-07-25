@@ -27,7 +27,7 @@ that string to see what a given test is protecting against.
 Run a single package or test:
 
 ```shell
-$ go test ./requests/ -run TestGenerateUrl -v
+$ go test ./core/ -run TestGenerateUrl -v
 $ go test ./command/ -run TestScanRequest -v
 ```
 
@@ -37,7 +37,7 @@ $ go test ./command/ -run TestScanRequest -v
 $ make smoke
 ```
 
-This builds the binary, starts the fixture server, runs 51 assertions covering
+This builds the binary, starts the fixture server, runs 64 assertions covering
 every flag and subcommand, and prints a pass/fail summary. It cleans up after
 itself. Use this as the "did I break anything" check before committing.
 
@@ -73,6 +73,10 @@ what was sent. Available endpoints:
 | `/status/<code>` | Returns that status code                    |
 | `/basic-auth`    | Requires Basic Auth                         |
 | `/multipart`     | Parses a multipart form and reports it      |
+| `/fidelity`      | JSON with a 64-bit integer, unsorted keys, a newline inside a string, and a duplicate key |
+| `/binary`        | A PNG header followed by NUL bytes          |
+| `/xml`           | An XML document                             |
+| `/yaml`          | A YAML document                             |
 
 ---
 
@@ -356,14 +360,42 @@ The exit code is 0.
 ```shell
 $ ./requestCLI get localhost:8080/json -B    # pretty-printed, colorized JSON
 $ ./requestCLI get localhost:8080/html -B    # syntax-highlighted HTML
+$ ./requestCLI get localhost:8080/xml -B     # syntax-highlighted XML
+$ ./requestCLI get localhost:8080/yaml -B    # syntax-highlighted YAML
 $ ./requestCLI get localhost:8080/text -B    # plain
+$ ./requestCLI get localhost:8080/binary -B  # a notice, not raw bytes
 ```
 
-Piping should produce clean, uncolored output:
+Try a different theme:
+
+```shell
+$ ./requestCLI get localhost:8080/xml -B --style github
+```
+
+Piping should produce clean, uncolored output, for every content type:
 
 ```shell
 $ ./requestCLI get localhost:8080/json -B | cat
+$ ./requestCLI get localhost:8080/html -B | cat
+$ NO_COLOR=1 ./requestCLI get localhost:8080/json -B
 ```
+
+### Scenario M2 — Output fidelity
+
+The body shown must be byte-for-byte what the server sent. `/fidelity` returns
+a payload built to break a display path that decodes and re-encodes:
+
+```shell
+$ ./requestCLI get localhost:8080/fidelity -B
+```
+
+Check all four:
+
+- `id` reads `1234567890123456789` exactly, not `...800`. Anything routed
+  through `float64` loses precision past 53 bits.
+- `zebra` still comes before `apple`. Keys are never sorted.
+- `note` still contains `\n`. Newlines inside string *data* are not stripped.
+- Both `dup` keys are shown rather than one silently winning.
 
 ### Scenario N — Error handling
 

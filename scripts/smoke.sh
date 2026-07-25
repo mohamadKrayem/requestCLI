@@ -59,6 +59,17 @@ echo "==> Building"
 go build -o "$BIN" "$ROOT" || exit 1
 
 echo "==> Starting echoserver"
+# Refuse to run against a fixture we did not start. A stale server left over
+# from a previous run answers on the same ports with an older build, which
+# produces confidently wrong results rather than an obvious failure.
+for port in 8080 8443; do
+  if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
+    exec 3>&-
+    echo "port $port is already in use; stop the process holding it first" >&2
+    exit 1
+  fi
+done
+
 go run "$ROOT/scripts/echoserver" >"$WORK/server.log" 2>&1 &
 SERVER_PID=$!
 
@@ -152,6 +163,29 @@ check "unknown command"   "unknown command"              "$BIN" fetch example.co
 check "connection refused" "connection refused"          "$BIN" get 127.0.0.1:1 --http
 check "malformed url"     "no host"                      "$BIN" get "://nope"
 check "malformed json"    "parsing json"                 "$BIN" post "$HTTP/" --multi -b '{bad'
+
+echo
+echo "== Output fidelity =="
+# The display path must never decode the payload: doing so silently corrupted
+# large integers, key order, newlines inside strings, and duplicate keys.
+check "large integers survive"     "1234567890123456789" "$BIN" get "$HTTP/fidelity" -B
+check "key order preserved"        "zebra"               "$BIN" get "$HTTP/fidelity" -B
+check "newline inside string kept" 'line1\nline2'        "$BIN" get "$HTTP/fidelity" -B
+check "duplicate keys shown"       '"dup"'               "$BIN" get "$HTTP/fidelity" -B
+
+# Piped output must never carry ANSI escapes. $'\033[' is an escape sequence.
+check_not "piped json has no ansi" $'\033[' "$BIN" get "$HTTP/json" -B
+check_not "piped html has no ansi" $'\033[' "$BIN" get "$HTTP/html" -B
+check_not "piped xml has no ansi"  $'\033[' "$BIN" get "$HTTP/xml" -B
+check_not "NO_COLOR strips colour" $'\033[' env NO_COLOR=1 "$BIN" get "$HTTP/json" -B
+
+check "xml is served"    "highlighted" "$BIN" get "$HTTP/xml" -B
+check "yaml is served"   "highlighted" "$BIN" get "$HTTP/yaml" -B
+
+# A binary body is described, not dumped.
+check     "binary body described"  "binary data" "$BIN" get "$HTTP/binary" -B
+check     "binary names its type"  "image/png"   "$BIN" get "$HTTP/binary" -B
+check_not "binary bytes not dumped" "PNG"        "$BIN" get "$HTTP/binary" -B
 
 echo
 echo "== Exit codes =="
