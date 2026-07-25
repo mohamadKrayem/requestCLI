@@ -21,7 +21,7 @@ import (
 )
 
 // Version is reported in the default User-Agent header.
-const Version = "0.2.0"
+const Version = "0.3.0"
 
 // DefaultTimeout bounds a whole request/response cycle when none is given.
 const DefaultTimeout = 30 * time.Second
@@ -263,7 +263,7 @@ func (req *BaseRequest) addDefaultHeaders(hasBody bool) {
 		req.Headers = make(map[string]any)
 	}
 	req.setIfAbsent("Accept", "*/*")
-	req.setIfAbsent("User-Agent", "requestCLI/"+Version)
+	req.setIfAbsent("User-Agent", "rq/"+Version)
 	// Requested explicitly because NewResult decodes brotli itself, which
 	// net/http does not do.
 	req.setIfAbsent("Accept-Encoding", "gzip, deflate, br")

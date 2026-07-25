@@ -356,13 +356,20 @@ func bodyItemsAsQuery(items reqitem.Items) (map[string]any, error) {
 			if err := json.Unmarshal([]byte(item.Value), &decoded); err != nil {
 				return nil, fmt.Errorf("request item %q is not valid json: %s", item.Arg, item.Value)
 			}
-			switch decoded.(type) {
-			case []any, map[string]any:
-				// Written verbatim, as the user typed it, so it stays compact
-				// JSON text rather than Go's "%v" formatting of a slice/map.
-				values[item.Key] = item.Value
+			switch text := decoded.(type) {
+			case string:
+				// A raw JSON string goes on the wire unquoted.
+				values[item.Key] = text
+			case nil:
+				values[item.Key] = nil
 			default:
-				values[item.Key] = decoded
+				// Numbers, booleans, arrays and objects all go on verbatim, as
+				// the user typed them. json.Unmarshal turns every number into a
+				// float64, so using the decoded value would round
+				// id:=1234567890123456789 to ...800 — the same corruption
+				// JSONBody writes bytes in order to avoid. It would be
+				// incoherent for GET to mangle what POST preserves.
+				values[item.Key] = item.Value
 			}
 		}
 	}

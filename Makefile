@@ -1,12 +1,17 @@
-BINARY := requestCLI
+BINARY := rq
+LEGACY := requestCLI
 PKG    := ./...
 
 .PHONY: all build test smoke server cover vet fmt lint tidy clean install
 
 all: fmt vet test build
 
+# Builds rq and a requestCLI symlink beside it, for one release of backward
+# compatibility. See ARCHITECTURE.md and the argv[0] deprecation notice in
+# main.go.
 build:
 	go build -o $(BINARY) .
+	ln -sf $(BINARY) $(LEGACY)
 
 install:
 	go install .
@@ -40,4 +45,4 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -f $(BINARY) coverage.out
+	rm -f $(BINARY) $(LEGACY) coverage.out

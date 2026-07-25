@@ -27,10 +27,10 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "requestCLI",
+	Use:     "rq",
 	Version: core.Version,
-	Short:   "RequestCLI is a CLI tool that allows you to send HTTP requests to a server.",
-	Long: `RequestCLI is a CLI tool that allows you to send HTTP requests to a server.
+	Short:   "rq is a CLI tool that allows you to send HTTP requests to a server.",
+	Long: `rq is a CLI tool that allows you to send HTTP requests to a server.
 It is a simple tool that allows you to send requests with different methods,
 headers, cookies, query params, body, and authentication.
 It also allows you to print the response in different formats.
@@ -97,6 +97,11 @@ func newMethodCmd(use, method, short string, aliases []string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return command.Run(method, args, opts)
 		},
+		// The positional arguments are a URL and request items, never files:
+		// completion must not offer filenames for either.
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		},
 	}
 }
 
@@ -129,6 +134,10 @@ func init() {
 
 	flags.BoolVar(&opts.CheckStatus, "check-status", false, "Exit with HTTPie's 3/4/5 status codes on a 3xx/4xx/5xx response.")
 	flags.BoolVar(&opts.IgnoreStdin, "ignore-stdin", false, "Never read a request body from piped stdin.")
+
+	_ = rootCmd.RegisterFlagCompletionFunc("style", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return render.StyleNames(), cobra.ShellCompDirectiveNoFileComp
+	})
 
 	// Deprecated: HTTPS is now the default, so --secure is a no-op.
 	flags.BoolVarP(&legacySecure, "secure", "s", false, "Deprecated: HTTPS is the default.")

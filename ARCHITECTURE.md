@@ -9,7 +9,9 @@ here is layering, error handling, and safe network defaults.
 ```
 main.go
   └── cmd/          flag definitions and one subcommand per HTTP verb
-        └── command/    turns flags into a request, renders the result
+        └── command/    turns flags + request items into a request, renders the result
+              ├── reqitem/  parses HTTPie-style positional request items
+              │     └── input/           multipart form and file bodies
               ├── core/     builds and sends the request -> Result
               │     ├── formats/         json validation for command-line input
               │     ├── input/           multipart form and file bodies
@@ -38,6 +40,17 @@ subcommands without argument validation.
 request; `PrepareInput` reads multi-line JSON documents from stdin for
 `--headers` / `--body` using a single shared scanner, so two documents can be
 read from one stream.
+
+### reqitem/
+
+Parses HTTPie-style positional request items (`key=value`, `key:=value`,
+`Key:value`, `key==value`, `key@path`, `key=@path`) into a typed `Items` slice,
+and encodes those items as a JSON body, form values, query values, header
+operations or multipart parts. This is a CLI-surface grammar, not a transport
+concern, so it sits beside `core` rather than inside it: `core` must stay
+usable by a front-end that never sees a command line. Only `command` imports
+it; `cmd` does not, and `input` does not import it either, so CLI syntax never
+sinks below `core`.
 
 ### core/
 
@@ -157,3 +170,23 @@ archive dumped to stdout leaves the terminal in a broken state.
 2026-07-25 — Sort header keys when rendering — Go map iteration is randomized,
 so two renders of one response differed. Snapshot diffing depends on this being
 stable.
+
+2026-07-25 — Parse request items in a new reqitem package rather than in core or command — the syntax is a CLI-surface grammar with a dozen ambiguity cases, so it needs unit tests without an Options struct, and core must stay usable by a TUI that never sees a command line.
+
+2026-07-25 — Fix the URL at positional argument 0 and never item-parse it — it removes the whole Key:value vs scheme-less host:port ambiguity class at zero cost, where HTTPie's position-free items require heuristics.
+
+2026-07-25 — Request items override -n/--headers and -q for the same key, and conflict with -b/--body — items are the more explicit source and Key: must be able to unset what a flag set, while merging a hand-written JSON body with generated fields would require decoding and re-encoding it, reintroducing the key reordering M1.5 removed.
+
+2026-07-25 — Build the item JSON body by writing bytes in order rather than through map[string]any — the same reason display never decodes: a map sorts keys and rounds large integers, so age:=1234567890123456789 would not reach the server intact.
+
+2026-07-25 — A key@file item implies multipart; combining it with -f is an error — inferring the encoding matches HTTPie and the alternative silently drops the file.
+
+2026-07-25 — Capture the sent request as core.SentRequest on Result and render it from render.RenderRequest — -v is a display concern, and printing from inside Send would make the request invisible to every other front-end.
+
+2026-07-25 — Adopt HTTPie's 3/4/5 exit codes for --check-status and add 2 for transport failure — a script today cannot tell "server said 404" from "could not reach the server", which is the whole reason --check-status exists.
+
+2026-07-25 — Read piped stdin as the body only when no explicit body source is given, with --ignore-stdin as the escape hatch — explicit beats implicit, and an empty pipe or /dev/null must behave exactly as today.
+
+2026-07-25 — Rename the binary to rq and ship requestCLI as a symlink with an argv[0] deprecation notice for one release — a second main package would duplicate the entry point for no gain.
+
+2026-07-25 — Keep the module path github.com/mohamadkrayem/requestCLI — renaming it is a breaking import-path change with no user-visible benefit in M1.

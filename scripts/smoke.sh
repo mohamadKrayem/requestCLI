@@ -11,7 +11,8 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
-BIN="$WORK/requestCLI"
+BIN="$WORK/rq"
+LEGACY_BIN="$WORK/requestCLI"
 HTTP="localhost:8080"
 HTTPS="https://localhost:8443"
 
@@ -57,6 +58,7 @@ check_not() {
 
 echo "==> Building"
 go build -o "$BIN" "$ROOT" || exit 1
+ln -sf rq "$LEGACY_BIN"
 
 echo "==> Starting echoserver"
 # Refuse to run against a fixture we did not start. A stale server left over
@@ -173,6 +175,13 @@ check "-v shows the request line" "GET / HTTP/1.1"  "$BIN" get "$HTTP/" -v -S
 check "-v shows a request header" "Accept:"          "$BIN" get "$HTTP/" -v -S
 
 echo
+echo "== requestCLI rename =="
+check "requestCLI name prints deprecation notice" \
+  "requestCLI is deprecated and will be removed in the next release; use rq" \
+  "$LEGACY_BIN" get "$HTTP/" -S
+check "requestCLI name still works" "200 OK" "$LEGACY_BIN" get "$HTTP/" -S
+
+echo
 echo "== Error handling =="
 check "no URL"            "requires at least 1 arg(s)"    "$BIN" get
 # A second bare URL is no longer an arity error: extra args are request items,
@@ -208,6 +217,12 @@ check "json item body (no flags)"        'name\":\"Mohamad' \
   "$BIN" post "$HTTP/" -B "name=Mohamad"
 check "large integer survives via item"  "1234567890123456789" \
   "$BIN" post "$HTTP/" -B "id:=1234567890123456789"
+# The query path must not mangle what the body path preserves: routing a raw
+# value through map[string]any rounded it to ...800 on GET while POST was exact.
+check "large integer survives on a query verb" "1234567890123456789" \
+  "$BIN" get "$HTTP/" -B "id:=1234567890123456789"
+check "raw bool on a query verb"         '"active": "true"' \
+  "$BIN" get "$HTTP/" -B "active:=true"
 check "raw field written verbatim"       'tags\":[1,2]' \
   "$BIN" post "$HTTP/" -B "tags:=[1,2]"
 check "duplicate item keys: last wins"   'a\":\"2' \
