@@ -1,3 +1,4 @@
+// Package response renders HTTP responses for terminal output.
 package response
 
 import (
@@ -6,16 +7,13 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
-	"io/ioutil"
-	"log"
+	"net/http"
 	"strings"
 
-	"github.com/alecthomas/chroma/quick"
+	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/dsnet/compress/brotli"
 	"github.com/fatih/color"
-	js "github.com/mohamadkrayem/requestCLI/formats"
-
-	"net/http"
+	"github.com/mohamadkrayem/requestCLI/formats"
 )
 
 type Response struct {
@@ -25,190 +23,155 @@ type Response struct {
 	Body    string
 }
 
-// NewResponse creates a new Response object
-func NewResponse(httpRes *http.Response, showStatus, showHeaders, showBody bool) Response {
-	var response Response
+// NewResponse renders the parts of the response the user asked to see.
+//
+// The three flags are a selection set, so they combine: -H -B shows headers and
+// body. Passing none shows everything.
+func NewResponse(httpRes *http.Response, showStatus, showHeaders, showBody bool) (*Response, error) {
+	if !showStatus && !showHeaders && !showBody {
+		showStatus, showHeaders, showBody = true, true, true
+	}
 
-	// how the user wants to show all the response
+	var response Response
 	if showStatus {
 		response.Proto = httpRes.Proto
 		response.Status = httpRes.Status
-	} else if showHeaders {
-		response.Headers = storeColorizedHeaders(httpRes)
-
-		//
-		//!!!!!!!!!!!!!!!!!!!!!!!! for testing purposes only !!!!!!!!!!!!!!!!!
-		/*
-			for key, val := range httpRes.Header {
-				fmt.Printf("%s:   %s\n", key, fmt.Sprintf("%v", val[0]))
-			}*/
-		//!!!!!!!!!!!!!!!!!!!!!!!! for testing purposes only !!!!!!!!!!!!!!!!!
-	} else if showBody {
-		response.Body, _ = storeColorizedBody(httpRes)
-	} else {
-		response = Response{
-			Proto:  httpRes.Proto,
-			Status: httpRes.Status,
-		}
-		response.Headers = storeColorizedHeaders(httpRes)
-		response.Body, _ = storeColorizedBody(httpRes)
 	}
-	return response
+	if showHeaders {
+		response.Headers = storeColorizedHeaders(httpRes)
+	}
+	if showBody {
+		body, err := storeColorizedBody(httpRes)
+		if err != nil {
+			return nil, err
+		}
+		response.Body = body
+	}
+	return &response, nil
 }
 
-// PrintResponse prints the response to the console
+// PrintResponse prints the response to the console.
 func (res *Response) PrintResponse() {
 	statusColor := color.New(color.FgHiBlue).SprintFunc()
 	protoColor := color.New(color.FgHiCyan).SprintFunc()
 
-	resSTR := fmt.Sprintf("\n%s %s\n", protoColor(res.Proto), statusColor(res.Status))
-	resSTR += res.Headers
-	resSTR += res.Body
-	fmt.Println(resSTR)
+	var out strings.Builder
+	if res.Status != "" {
+		fmt.Fprintf(&out, "\n%s %s\n", protoColor(res.Proto), statusColor(res.Status))
+	}
+	out.WriteString(res.Headers)
+	out.WriteString(res.Body)
+
+	fmt.Println(strings.TrimRight(out.String(), "\n"))
 }
 
-// storeColorizedHeaders stores the headers in a colorized way
+// storeColorizedHeaders renders the headers in a colorized way.
 func storeColorizedHeaders(res *http.Response) string {
-	headers := res.Header
 	keyColor := color.New(color.FgCyan).SprintFunc()
 	valColor := color.New(color.FgHiWhite).SprintFunc()
 
-	var resSTR string
-	for key, val := range headers {
-		if len(val) > 1 {
-			for _, v := range val {
-				resSTR += fmt.Sprintf("%s:   %s\n", keyColor(key), valColor(v))
-			}
-		} else {
-			resSTR += fmt.Sprintf("%s:   %s\n", keyColor(key), valColor(fmt.Sprintf("%v", val[0])))
+	var resSTR strings.Builder
+	for key, values := range res.Header {
+		for _, v := range values {
+			fmt.Fprintf(&resSTR, "%s:   %s\n", keyColor(key), valColor(v))
 		}
 	}
-	resSTR += "\n"
-	return resSTR
+	resSTR.WriteString("\n")
+	return resSTR.String()
 }
 
-// storeColorizedBody stores the body in a colorized way
+// storeColorizedBody renders the body, colorizing it according to its content type.
 func storeColorizedBody(res *http.Response) (string, error) {
-	var stringToBePrinted string
-
 	if res.Body == nil {
 		return "", nil
 	}
 
-	// check the content type of the response body first to know how to colorize it
+	body, err := readResponseBody(res)
+	if err != nil {
+		return "", err
+	}
+	if len(body) == 0 {
+		return "", nil
+	}
+
 	contentType := res.Header.Get("Content-Type")
-	if strings.Contains(contentType, "text/html") {
-		htmlSTR, err := getColorizedHTML(res)
-		if err != nil {
-			return "", err
-		}
-		stringToBePrinted = htmlSTR
-	} else if strings.Contains(contentType, "application/json") {
-		resJS, err := storeColorizedBodyAsJSON(res)
-		if err != nil {
-			return "", err
-		}
-		stringToBePrinted = resJS
-	} else {
-		body, err := readResponseBody(res)
-		if err != nil {
-			return "", err
-		}
+	switch {
+	case strings.Contains(contentType, "text/html"):
+		return colorizeHTML(body), nil
 
-		stringToBePrinted = string(body)
+	case strings.Contains(contentType, "json"):
+		colorized, err := colorizeJSON(body)
+		if err != nil {
+			// The header claimed JSON but the payload is not parseable.
+			// Showing the raw body beats failing the whole command.
+			return string(body), nil
+		}
+		return colorized, nil
+
+	default:
+		return string(body), nil
 	}
-	return stringToBePrinted, nil
 }
 
-// storeColorizedBodyAsJSON stores the json data of the body in a colorized way
-func storeColorizedBodyAsJSON(res *http.Response) (string, error) {
-
-	resBody, _ := readResponseBody(res)
-	resJS, err := js.NewJson(string(resBody))
+// colorizeJSON pretty-prints and colorizes a JSON payload.
+func colorizeJSON(body []byte) (string, error) {
+	resJS, err := formats.NewJson(string(body))
 	if err != nil {
 		return "", err
 	}
-	resStr, err := resJS.GetColorizedJSON()
-	if err != nil {
-		return "", err
-	}
-
-	return resStr, nil
+	return resJS.GetColorizedJSON()
 }
 
-// readResponseBody reads the response body
+// colorizeHTML applies syntax highlighting to an HTML payload.
+func colorizeHTML(body []byte) string {
+	var buf bytes.Buffer
+	if err := quick.Highlight(&buf, string(body), "html", "terminal", "monokai"); err != nil {
+		// Highlighting is cosmetic: fall back to the plain body.
+		return string(body)
+	}
+	return buf.String()
+}
+
+// readResponseBody reads the body, decompressing it if the server encoded it.
+//
+// It does not close the body; the caller that issued the request owns it.
 func readResponseBody(res *http.Response) ([]byte, error) {
-	defer res.Body.Close()
+	reader, err := decompressingReader(res)
+	if err != nil {
+		return nil, err
+	}
+	if closer, ok := reader.(io.Closer); ok && reader != res.Body {
+		defer closer.Close()
+	}
 
-	var contentEncoding string = res.Header.Get("Content-Encoding")
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("reading response body: %w", err)
+	}
+	return body, nil
+}
 
-	if contentEncoding == "gzip" {
-		// Create a gzip reader to decompress the response body
+// decompressingReader wraps the body in a decoder for the advertised encoding.
+func decompressingReader(res *http.Response) (io.Reader, error) {
+	switch strings.TrimSpace(strings.ToLower(res.Header.Get("Content-Encoding"))) {
+	case "gzip":
 		reader, err := gzip.NewReader(res.Body)
 		if err != nil {
-			log.Fatal(err)
+			return nil, fmt.Errorf("decoding gzip response: %w", err)
 		}
-		defer reader.Close()
+		return reader, nil
 
-		// Read the decompressed data
-		decompressedData, err := ioutil.ReadAll(reader)
+	case "deflate":
+		return flate.NewReader(res.Body), nil
+
+	case "br":
+		reader, err := brotli.NewReader(res.Body, &brotli.ReaderConfig{})
 		if err != nil {
-			log.Fatal("error decoding gzip response", err)
+			return nil, fmt.Errorf("decoding brotli response: %w", err)
 		}
-		return decompressedData, nil
-	} else if contentEncoding == "deflate" {
-		compressedData, err := ioutil.ReadAll(res.Body)
-		if err != nil {
-			log.Fatal(err)
-		}
+		return reader, nil
 
-		reader := flate.NewReader(bytes.NewReader(compressedData))
-
-		decompressedData, err := ioutil.ReadAll(reader)
-		if err != nil {
-			log.Fatal("error decoding deflate response", err)
-		}
-
-		defer reader.Close()
-		return decompressedData, nil
-
-	} else if contentEncoding == "br" {
-		// A brotli reader config
-		conf := brotli.ReaderConfig{}
-		// A brotli reader to decompress the response body
-		reader, err := brotli.NewReader(res.Body, &conf)
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer reader.Close()
-		resBody, err := io.ReadAll(reader)
-		if err != nil {
-			log.Fatal("error decoding br response", err)
-		}
-		return resBody, nil
-	} else {
-
-		body, err := io.ReadAll(res.Body)
-		if err != nil {
-			fmt.Print(err)
-			return nil, err
-		}
-
-		return body, nil
+	default:
+		return res.Body, nil
 	}
-}
-
-// getColorizedHTML colorizes the HTML code
-func getColorizedHTML(res *http.Response) (string, error) {
-	bodyBYTES, err := readResponseBody(res)
-	if err != nil {
-		return "", err
-	}
-
-	// Colorize the HTML code
-	var buf bytes.Buffer
-	quick.Highlight(&buf, string(bodyBYTES), "html", "terminal", "monokai")
-
-	// Print the colorized HTML code to the console
-	return buf.String(), nil
 }

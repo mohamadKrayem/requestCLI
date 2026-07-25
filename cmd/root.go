@@ -1,80 +1,133 @@
 /*
 Copyright © 2023 Mohamad Krayem <mohamadkrayem@email.com>
 */
+
+// Package cmd wires CLI flags to the request builder.
 package cmd
 
 import (
+	"fmt"
+	"net/http"
 	"os"
 
-	json "github.com/mohamadkrayem/requestCLI/formats"
+	"github.com/mohamadkrayem/requestCLI/command"
+	"github.com/mohamadkrayem/requestCLI/requests"
 	"github.com/spf13/cobra"
 )
 
-type Cmd struct {
-	Method      string
-	QueryParams map[string]string
-	Cookies     map[string]string
-	Auth        map[string]string
-	Body        bool
-	BodyJS      string
-	Headers     bool
-	HeadersJS   map[string]string
-	Https       bool
-	ShowStatus  bool
-	ShowHeaders bool
-	ShowBody    bool
-	Form        bool
-	Text        bool
-	ReqHeaders  bool
-	Headersjs   json.Json
-	Redirect    bool
-	Multipart   bool
-}
+// opts collects every flag value for the invocation.
+var opts = &command.Options{}
 
-var Command = Cmd{}
+// Deprecated flags, kept so existing scripts keep working.
+var (
+	legacySecure   bool
+	legacyRedirect bool
+)
 
-// rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "requestCLI",
-	Short: "RequestCLI is a CLI tool that allows you to send HTTP requests to a server.",
-	Long: `RequestCLI is a CLI tool that allows you to send HTTP requests to a server. 
+	Use:     "requestCLI",
+	Version: requests.Version,
+	Short:   "RequestCLI is a CLI tool that allows you to send HTTP requests to a server.",
+	Long: `RequestCLI is a CLI tool that allows you to send HTTP requests to a server.
 It is a simple tool that allows you to send requests with different methods,
 headers, cookies, query params, body, and authentication.
 It also allows you to print the response in different formats.
-It deals with various data compression algorithms such as deflated, gzip, and br.
-	`,
-	/*Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("----------------------------------------------------------------")
-		fmt.Println(args)
-		fmt.Println("----------------------------------------------------------------")
-	},*/
+It deals with various data compression algorithms such as deflate, gzip, and br.
+
+Scheme-less URLs default to https, except loopback hosts (localhost, 127.0.0.1)
+which default to http. Use --http to force plain HTTP.`,
+
+	// Errors are printed once by Execute; a usage dump on a runtime failure is noise.
+	SilenceUsage:  true,
+	SilenceErrors: true,
+
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		if legacyRedirect {
+			opts.Redirect = true
+		}
+	},
 }
 
+// Execute runs the root command.
 func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }
 
-func init() {
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.requestCLI.yaml)")
+// methods lists every HTTP verb exposed as a subcommand.
+var methods = []struct {
+	use     string
+	method  string
+	short   string
+	aliases []string
+}{
+	{"get", http.MethodGet, "Send a GET request to a server.", nil},
+	{"post", http.MethodPost, "Send a POST request to a server.", nil},
+	{"put", http.MethodPut, "Send a PUT request to a server.", nil},
+	{"patch", http.MethodPatch, "Send a PATCH request to a server.", nil},
+	{"del", http.MethodDelete, "Send a DELETE request to a server.", []string{"delete"}},
+	{"head", http.MethodHead, "Send a HEAD request to a server.", nil},
+	{"options", http.MethodOptions, "Send an OPTIONS request to a server.", nil},
+	{"trace", http.MethodTrace, "Send a TRACE request to a server.", nil},
+	{"connect", http.MethodConnect, "Send a CONNECT request to a server.", []string{"conn"}},
+}
 
-	rootCmd.Flags().Bool("toggle", false, "Help message for toggle.")
-	rootCmd.PersistentFlags().BoolVarP(&Command.Https, "secure", "s", false, "Send a secure request.")
-	rootCmd.PersistentFlags().BoolVarP(&Command.Form, "form", "f", false, "Send a form.")
-	rootCmd.PersistentFlags().BoolVar(&Command.Multipart, "multi", false, "Send a multipart form.")
-	rootCmd.PersistentFlags().StringToStringVarP(&Command.QueryParams, "query", "q", nil, "Write your query params.")
-	rootCmd.PersistentFlags().StringToStringVarP(&Command.Cookies, "cookie", "c", nil, "Set your cookies.")
-	rootCmd.PersistentFlags().StringToStringVarP(&Command.Auth, "auth", "a", nil, "Set your basic-auth.")
-	rootCmd.PersistentFlags().BoolVar(&Command.Body, "body", false, "Write your nested body in json format.")
-	rootCmd.PersistentFlags().BoolVar(&Command.Headers, "headers", false, "Write your nested headers in json format.")
-	rootCmd.PersistentFlags().StringVarP(&Command.BodyJS, "Nbody", "b", "", "Write your body in a simple json format on a single line.")
-	rootCmd.PersistentFlags().StringToStringVarP(&Command.HeadersJS, "Nheaders", "n", nil, "Write your headers in a simple json format on a single line.")
-	rootCmd.PersistentFlags().BoolVarP(&Command.ShowBody, "printB", "B", false, "Print only the body of the response.")
-	rootCmd.PersistentFlags().BoolVarP(&Command.ShowHeaders, "printH", "H", false, "Print only the headers of the response.")
-	rootCmd.PersistentFlags().BoolVarP(&Command.ShowStatus, "printS", "S", false, "Print only the status code of the response.")
-	rootCmd.PersistentFlags().BoolVarP(&Command.Text, "text", "t", false, "Send plain text")                             // to be implemented
-	rootCmd.PersistentFlags().BoolVarP(&Command.ReqHeaders, "reqHeaders", "r", false, "Print only the request headers.") // to be implemented
-	rootCmd.PersistentFlags().BoolVar(&Command.Redirect, "Redirect", false, "Follow Redirects")
+// newMethodCmd builds the subcommand for one HTTP method.
+//
+// Every verb is created here so argument validation and method wiring cannot
+// drift between them, which is what previously let `trace` send CONNECT and
+// left four subcommands without argument checks.
+func newMethodCmd(use, method, short string, aliases []string) *cobra.Command {
+	return &cobra.Command{
+		Use:     use + " URL",
+		Aliases: aliases,
+		Short:   short,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := command.PrepareInput(opts); err != nil {
+				return err
+			}
+			return command.Run(method, args, opts)
+		},
+	}
+}
+
+func init() {
+	flags := rootCmd.PersistentFlags()
+
+	flags.BoolVar(&opts.HTTP, "http", false, "Send over plain HTTP instead of HTTPS.")
+	flags.BoolVarP(&opts.Insecure, "insecure", "k", false, "Skip TLS certificate verification (dangerous).")
+	flags.DurationVar(&opts.Timeout, "timeout", requests.DefaultTimeout, "Overall request timeout.")
+
+	flags.BoolVarP(&opts.Form, "form", "f", false, "Send a url-encoded form.")
+	flags.BoolVar(&opts.Multipart, "multi", false, "Send a multipart form.")
+
+	flags.StringToStringVarP(&opts.QueryParams, "query", "q", nil, "Write your query params.")
+	flags.StringToStringVarP(&opts.Cookies, "cookie", "c", nil, "Set your cookies.")
+	flags.StringToStringVarP(&opts.Auth, "auth", "a", nil, "Set your basic-auth, e.g. username=me,password=secret.")
+
+	flags.BoolVar(&opts.Body, "body", false, "Read a multi-line json body from stdin, terminated by ';'.")
+	flags.BoolVar(&opts.Headers, "headers", false, "Read multi-line json headers from stdin, terminated by ';'.")
+	flags.StringVarP(&opts.BodyJS, "Nbody", "b", "", "Write your body as json on a single line.")
+	flags.StringToStringVarP(&opts.HeadersJS, "Nheaders", "n", nil, "Write your headers as key=value pairs.")
+
+	flags.BoolVarP(&opts.ShowBody, "printB", "B", false, "Print the body of the response.")
+	flags.BoolVarP(&opts.ShowHeaders, "printH", "H", false, "Print the headers of the response.")
+	flags.BoolVarP(&opts.ShowStatus, "printS", "S", false, "Print the status line of the response.")
+
+	flags.BoolVar(&opts.Redirect, "redirect", false, "Follow redirects.")
+
+	// Deprecated: HTTPS is now the default, so --secure is a no-op.
+	flags.BoolVarP(&legacySecure, "secure", "s", false, "Deprecated: HTTPS is the default.")
+	_ = flags.MarkDeprecated("secure", "HTTPS is now the default; use --http to force plain HTTP")
+
+	// Deprecated: renamed to the conventional lowercase --redirect.
+	flags.BoolVar(&legacyRedirect, "Redirect", false, "Deprecated: use --redirect.")
+	_ = flags.MarkDeprecated("Redirect", "use --redirect instead")
+
+	for _, m := range methods {
+		rootCmd.AddCommand(newMethodCmd(m.use, m.method, m.short, m.aliases))
+	}
 }

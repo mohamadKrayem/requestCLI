@@ -1,21 +1,22 @@
+// Package authentication holds request credential types.
 package authentication
 
-// "net/http"
-// "fmt"
-
+// BaseAuth carries HTTP Basic Auth credentials.
 type BaseAuth struct {
 	Username string
 	Password string
 }
 
-func NewBaseRequest(username, password string) BaseAuth {
+// NewBaseAuth builds credentials from a username and password.
+func NewBaseAuth(username, password string) BaseAuth {
 	return BaseAuth{
 		Username: username,
 		Password: password,
 	}
 }
 
-func NewBaseRequestFromMap(auth map[string]string) BaseAuth {
+// NewBaseAuthFromMap builds credentials from the --auth flag's key/value map.
+func NewBaseAuthFromMap(auth map[string]string) BaseAuth {
 	if auth == nil {
 		return BaseAuth{}
 	}

@@ -1,123 +1,175 @@
+// Package command turns parsed CLI flags into a request and prints the response.
 package command
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
-	"log"
+	"io"
 	"os"
 	"strings"
+	"time"
 
 	auth "github.com/mohamadkrayem/requestCLI/authentication"
-	json "github.com/mohamadkrayem/requestCLI/formats"
+	"github.com/mohamadkrayem/requestCLI/formats"
 	rq "github.com/mohamadkrayem/requestCLI/requests"
-	"github.com/spf13/cobra"
 )
 
-type Command struct {
-	BodyJS      *string
-	Method      string
-	Headersjs   *json.Json
-	HeadersJS   *map[string]string
-	Https       bool
-	Ss          bool
-	Sh          bool
-	Sb          bool
-	Form        *bool
-	Multipart   bool
-	Body        bool
-	Headers     bool
-	Redirect    bool
-	Cookies     *map[string]string
-	BasicAuth   auth.BaseAuth
-	QueryParams *map[string]string
+// maxInputSize caps a single stdin-supplied JSON document.
+const maxInputSize = 1 << 20 // 1 MiB
+
+// Options holds every flag value for one invocation.
+type Options struct {
+	QueryParams map[string]string
+	Cookies     map[string]string
+	Auth        map[string]string
+
+	Body      bool
+	BodyJS    string
+	Headers   bool
+	HeadersJS map[string]string
+	Headersjs formats.Json
+
+	HTTP     bool
+	Insecure bool
+	Timeout  time.Duration
+
+	ShowStatus  bool
+	ShowHeaders bool
+	ShowBody    bool
+
+	Form      bool
+	Multipart bool
+	Redirect  bool
 }
 
-func NewCommand() Command {
-	return Command{}
-}
-
-func (command *Command) Run(args []string, cmd *cobra.Command) {
-	URL := rq.GenerateUrl(args[0], command.Https, *command.QueryParams)
-	request := rq.NewRequest(command.Method, URL)
-
-	if *command.Form {
-		*command.HeadersJS = make(map[string]string)
-		(*command.HeadersJS)["Content-Type"] = "application/x-www-Form-urlencoded"
+// Run builds and sends the request described by opts, then prints the response.
+func Run(method string, args []string, opts *Options) error {
+	if len(args) == 0 {
+		return errors.New("a URL is required")
 	}
 
-	if *command.Cookies != nil {
-		for key, value := range *command.Cookies {
-			request.WithCookie(key, value)
-		}
-	}
-
-	if command.BasicAuth.Username != "" && command.BasicAuth.Password != "" {
-		request.BasicAuth = command.BasicAuth
-	}
-
-	if *command.HeadersJS != nil {
-		request.WithHeadersMap(command.HeadersJS)
-	} else if *command.Headersjs != "" {
-		request.WithHeaders(*command.Headersjs)
-	}
-
-	if *command.BodyJS != "" {
-		request.WithBody(*command.BodyJS, command.Form, command.Multipart)
-	}
-
-	resp, err := request.Send(command.Ss, command.Sh, command.Sb, command.Redirect)
+	url, err := rq.GenerateUrl(args[0], opts.HTTP, opts.QueryParams)
 	if err != nil {
-		log.Fatal("error in sending the request !!!")
-	}
-	resp.PrintResponse()
-}
-
-func (command *Command) PersistentPreRun(cmd *cobra.Command, args []string) {
-	//if no --command.Body or --command.Headers than no need for newScaner();
-	if !command.Body && !command.Headers {
-		return
+		return err
 	}
 
-	//if nested json; than we need newScanner()
-	if command.Headers && *command.HeadersJS == nil {
-		*command.Headersjs, _ = json.NewJson(scanRequest())
+	request := rq.NewRequest(method, url)
 
-		//if simple json (map[string]string) than command.Headersjs = jsonOfMap and no need for newScanner()
-	} else if !command.Headers && *command.HeadersJS != nil {
-		*command.Headersjs, _ = json.ToJSON(*command.HeadersJS)
+	for key, value := range opts.Cookies {
+		request.WithCookie(key, value)
 	}
 
-	//if --command.Body => we need newScanner()
-	if command.Body && *command.BodyJS == "" {
-		*command.BodyJS = scanRequest()
+	if basicAuth := auth.NewBaseAuthFromMap(opts.Auth); basicAuth.Username != "" {
+		request.BasicAuth = basicAuth
 	}
-}
 
-func scanRequest() string {
-	// Read in the user's input
-	scanner := bufio.NewScanner(os.Stdin)
-	var input, strTest string
-	var count int
-
-	for scanner.Scan() {
-		strTest = strings.TrimSpace(scanner.Text())
-
-		//input[lastIndex] == ';' ? end of the input;
-		if strTest[len(strTest)-1] == ';' {
-			break
-		} else if strTest[len(strTest)-1] == '{' || strTest[len(strTest)-1] == '[' {
-			count += 2
-		} else if strTest[len(strTest)-1] != ',' {
-			count -= 2
+	// Both header sources merge, so -n and --headers can be combined.
+	if len(opts.HeadersJS) > 0 {
+		request.WithHeadersMap(opts.HeadersJS)
+	}
+	if opts.Headersjs != "" {
+		if err := request.WithHeaders(opts.Headersjs); err != nil {
+			return err
 		}
-		fmt.Print(strings.Repeat(" ", count))
-		input += scanner.Text()
 	}
 
-	input = strings.ReplaceAll(input, "\\n", "")
-	input = strings.ReplaceAll(input, "\n", "")
-	// Replace any instances of a backslash followed by a newline
-	input += "}"
+	if opts.BodyJS != "" {
+		if err := request.WithBody(opts.BodyJS, opts.Form, opts.Multipart); err != nil {
+			return err
+		}
+	}
 
-	return input
+	resp, err := request.Send(rq.SendOptions{
+		ShowStatus:  opts.ShowStatus,
+		ShowHeaders: opts.ShowHeaders,
+		ShowBody:    opts.ShowBody,
+		Redirect:    opts.Redirect,
+		Insecure:    opts.Insecure,
+		Timeout:     opts.Timeout,
+	})
+	if err != nil {
+		return err
+	}
+
+	resp.PrintResponse()
+	return nil
+}
+
+// stdinScanner is created once and shared across reads.
+//
+// A fresh bufio.Scanner per call would buffer past the first ';' terminator and
+// swallow the second document, breaking `--headers --body` together.
+var stdinScanner *bufio.Scanner
+
+func sharedStdinScanner() *bufio.Scanner {
+	if stdinScanner == nil {
+		stdinScanner = newScanner(os.Stdin)
+	}
+	return stdinScanner
+}
+
+// PrepareInput reads nested JSON from stdin when --body or --headers were given.
+//
+// When both are set, headers are read first and the body second, matching the
+// order documented in the README.
+func PrepareInput(opts *Options) error {
+	scanner := sharedStdinScanner()
+
+	if opts.Headers {
+		raw, err := scanRequest(scanner)
+		if err != nil {
+			return fmt.Errorf("reading --headers: %w", err)
+		}
+		headers, err := formats.NewJson(raw)
+		if err != nil {
+			return fmt.Errorf("reading --headers: %w", err)
+		}
+		opts.Headersjs = headers
+	}
+
+	if opts.Body && opts.BodyJS == "" {
+		raw, err := scanRequest(scanner)
+		if err != nil {
+			return fmt.Errorf("reading --body: %w", err)
+		}
+		opts.BodyJS = raw
+	}
+
+	return nil
+}
+
+func newScanner(r io.Reader) *bufio.Scanner {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxInputSize)
+	return scanner
+}
+
+// scanRequest reads one multi-line JSON document, terminated by a line ending in ';'.
+//
+// Blank lines are skipped and the document is returned exactly as written, so
+// both objects and top-level arrays round-trip correctly. The scanner is passed
+// in so successive documents can be read from the same stream.
+func scanRequest(scanner *bufio.Scanner) (string, error) {
+	var input strings.Builder
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		if strings.HasSuffix(line, ";") {
+			input.WriteString(strings.TrimSuffix(line, ";"))
+			break
+		}
+		input.WriteString(line)
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("reading input: %w", err)
+	}
+
+	text := strings.TrimSpace(input.String())
+	if text == "" {
+		return "", errors.New("no input given; end your json with ';'")
+	}
+	return text, nil
 }

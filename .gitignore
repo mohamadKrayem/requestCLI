@@ -1,2 +1,17 @@
+# Build output
 requestCLI
+dist/
 
+# Test and coverage artifacts
+*.test
+coverage.out
+coverage.html
+
+# Local environment
+.env
+.env.local
+
+# Editor / OS noise
+.idea/
+.vscode/
+.DS_Store
