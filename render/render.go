@@ -22,6 +22,12 @@ type Options struct {
 	ShowHeaders bool
 	ShowBody    bool
 
+	// ShowRequest displays the request that was sent (-v). It is deliberately
+	// not part of the ShowStatus/ShowHeaders/ShowBody selection set: -v alone
+	// shows the request plus the full response, and -v -B shows the request
+	// plus the response body only.
+	ShowRequest bool
+
 	// Color is resolved by the caller from the TTY, NO_COLOR and any flag.
 	// Nothing below this point makes that decision for itself.
 	Color bool
@@ -52,17 +58,28 @@ func Render(r *core.Result, opts Options) string {
 		opts.ShowStatus, opts.ShowHeaders, opts.ShowBody = true, true, true
 	}
 
-	var out strings.Builder
+	var response strings.Builder
 	if opts.ShowStatus {
-		fmt.Fprintf(&out, "\n%s %s\n",
+		fmt.Fprintf(&response, "\n%s %s\n",
 			colorize(r.Proto, ansiHiCyan, opts.Color),
 			colorize(r.Status, ansiHiBlue, opts.Color))
 	}
 	if opts.ShowHeaders {
-		out.WriteString(renderHeaders(r, opts))
+		response.WriteString(renderHeaders(r, opts))
 	}
 	if opts.ShowBody {
-		out.WriteString(renderBody(r, opts))
+		response.WriteString(renderBody(r, opts))
+	}
+
+	var out strings.Builder
+	if opts.ShowRequest && r.Request != nil {
+		// The request block and the response block are always separated by
+		// exactly one blank line, on stdout, so `rq -v ... | less` shows both.
+		out.WriteString(strings.TrimRight(RenderRequest(r.Request, opts), "\n"))
+		out.WriteString("\n\n")
+		out.WriteString(strings.TrimLeft(response.String(), "\n"))
+	} else {
+		out.WriteString(response.String())
 	}
 
 	return strings.TrimRight(out.String(), "\n")
@@ -97,26 +114,32 @@ func renderBody(r *core.Result, opts Options) string {
 	if len(r.Body) == 0 {
 		return ""
 	}
+	return renderBodyBytes(r.Body, r.MediaType(), opts)
+}
 
-	mediaType := r.MediaType()
-
-	if isBinary(r.Body, mediaType) {
-		return binaryNotice(r.Body, mediaType)
+// renderBodyBytes formats a body according to its media type. It is shared by
+// the response renderer and RenderRequest, so a request body goes through
+// exactly the same pipeline as a response one: JSON is pretty-printed from raw
+// bytes, a binary payload is described instead of dumped, and everything else
+// with a known content type is syntax-highlighted.
+func renderBodyBytes(body []byte, mediaType string, opts Options) string {
+	if isBinary(body, mediaType) {
+		return binaryNotice(body, mediaType)
 	}
 
 	if isJSON(mediaType) {
-		if out, ok := renderJSON(r.Body, opts.Color); ok {
+		if out, ok := renderJSON(body, opts.Color); ok {
 			return out
 		}
 		// The header claimed JSON but the payload is not parseable.
 		// Showing the raw body beats failing the whole command.
-		return string(r.Body)
+		return string(body)
 	}
 
 	if lexer, ok := lexerFor(mediaType); ok {
-		return highlight(r.Body, lexer, opts)
+		return highlight(body, lexer, opts)
 	}
-	return string(r.Body)
+	return string(body)
 }
 
 // colorize wraps s in an ANSI code, or returns it untouched when colour is off.

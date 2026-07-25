@@ -6,6 +6,7 @@ Copyright © 2023 Mohamad Krayem <mohamadkrayem@email.com>
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -52,6 +53,13 @@ which default to http. Use --http to force plain HTTP.`,
 // Execute runs the root command.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		var exitErr *command.ExitError
+		if errors.As(err, &exitErr) {
+			if exitErr.Err != nil {
+				fmt.Fprintln(os.Stderr, "Error:", exitErr.Err)
+			}
+			os.Exit(exitErr.Code)
+		}
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
@@ -87,9 +95,6 @@ func newMethodCmd(use, method, short string, aliases []string) *cobra.Command {
 		Short:   short,
 		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := command.PrepareInput(opts); err != nil {
-				return err
-			}
 			return command.Run(method, args, opts)
 		},
 	}
@@ -117,9 +122,13 @@ func init() {
 	flags.BoolVarP(&opts.ShowBody, "printB", "B", false, "Print the body of the response.")
 	flags.BoolVarP(&opts.ShowHeaders, "printH", "H", false, "Print the headers of the response.")
 	flags.BoolVarP(&opts.ShowStatus, "printS", "S", false, "Print the status line of the response.")
+	flags.BoolVarP(&opts.Verbose, "verbose", "v", false, "Show the request that was sent, in addition to the response.")
 
 	flags.BoolVar(&opts.Redirect, "redirect", false, "Follow redirects.")
 	flags.StringVar(&opts.Style, "style", render.DefaultStyle, "Syntax highlighting theme for non-json bodies.")
+
+	flags.BoolVar(&opts.CheckStatus, "check-status", false, "Exit with HTTPie's 3/4/5 status codes on a 3xx/4xx/5xx response.")
+	flags.BoolVar(&opts.IgnoreStdin, "ignore-stdin", false, "Never read a request body from piped stdin.")
 
 	// Deprecated: HTTPS is now the default, so --secure is a no-op.
 	flags.BoolVarP(&legacySecure, "secure", "s", false, "Deprecated: HTTPS is the default.")

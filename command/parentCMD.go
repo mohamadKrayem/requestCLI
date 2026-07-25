@@ -19,8 +19,12 @@ import (
 	"github.com/mohamadkrayem/requestCLI/reqitem"
 )
 
-// maxInputSize caps a single stdin-supplied JSON document.
+// maxInputSize caps a single stdin-supplied JSON document (--headers/--body).
 const maxInputSize = 1 << 20 // 1 MiB
+
+// maxStdinBodySize caps a piped stdin body (the implicit source), distinct
+// from maxInputSize above.
+const maxStdinBodySize = 10 << 20 // 10 MiB
 
 // Options holds every flag value for one invocation.
 type Options struct {
@@ -34,6 +38,14 @@ type Options struct {
 	HeadersJS map[string]string
 	Headersjs formats.Json
 
+	// IgnoreStdin suppresses the implicit read of a piped body. It is the
+	// escape hatch for a shell that leaves an open pipe on stdin.
+	IgnoreStdin bool
+	// StdinBody holds a body read from a piped stdin. It is populated by
+	// PrepareInput, distinct from BodyJS which only ever comes from an
+	// explicit -b/--Nbody or --body source.
+	StdinBody string
+
 	HTTP     bool
 	Insecure bool
 	Timeout  time.Duration
@@ -43,14 +55,43 @@ type Options struct {
 	ShowBody    bool
 	Style       string
 
+	// Verbose shows the request that was sent (-v), in addition to whatever
+	// the Show flags already select from the response.
+	Verbose bool
+	// CheckStatus turns an HTTP error status into a non-zero exit code via
+	// ExitError, using HTTPie's 3/4/5 scheme. It never changes what is
+	// rendered — only the exit code.
+	CheckStatus bool
+
 	Form      bool
 	Multipart bool
 	Redirect  bool
 }
 
-// Run parses args[0] as the URL and args[1:] as request items, builds and
-// sends the request described by opts and the items, then prints the
-// response.
+// ExitError carries a specific process exit code. Err is nil when the failure
+// is only an HTTP status, in which case nothing extra is printed to stderr —
+// the rendered status line has already said it.
+type ExitError struct {
+	Code int
+	Err  error
+}
+
+func (e *ExitError) Error() string {
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return fmt.Sprintf("request completed with exit code %d", e.Code)
+}
+
+func (e *ExitError) Unwrap() error { return e.Err }
+
+// Run parses args[0] as the URL and args[1:] as request items, assembles the
+// request, sends it and prints the result.
+//
+// The order below is fixed and must not be reordered: parse items ->
+// PrepareInput -> buildRequest -> applyItems -> Send -> render -> checkStatus.
+// Rendering always happens before checkStatus runs, so --check-status only
+// ever changes the exit code, never the output.
 func Run(method string, args []string, opts *Options) error {
 	if len(args) == 0 {
 		return errors.New("a URL is required")
@@ -63,9 +104,56 @@ func Run(method string, args []string, opts *Options) error {
 		return err
 	}
 
-	url, err := core.GenerateUrl(args[0], opts.HTTP, opts.QueryParams)
+	if err := PrepareInput(opts, items); err != nil {
+		return err
+	}
+
+	request, err := buildRequest(method, args[0], items, opts)
 	if err != nil {
 		return err
+	}
+
+	if err := applyItems(request, items, opts); err != nil {
+		return err
+	}
+
+	result, err := request.Send(core.SendOptions{
+		Redirect: opts.Redirect,
+		Insecure: opts.Insecure,
+		Timeout:  opts.Timeout,
+	})
+	if err != nil {
+		// A transport failure (DNS, connect, TLS, timeout) gets its own exit
+		// code, distinct from a request that could not be built at all, so a
+		// script can tell "could not reach the server" from a usage error.
+		var transportErr *core.TransportError
+		if errors.As(err, &transportErr) {
+			return &ExitError{Code: 2, Err: err}
+		}
+		return err
+	}
+
+	// Colour is resolved here, once, and passed down. No renderer decides for
+	// itself whether it is talking to a terminal.
+	fmt.Println(render.Render(result, render.Options{
+		ShowStatus:  opts.ShowStatus,
+		ShowHeaders: opts.ShowHeaders,
+		ShowBody:    opts.ShowBody,
+		ShowRequest: opts.Verbose,
+		Color:       render.ColorEnabled(os.Stdout),
+		Style:       opts.Style,
+	}))
+
+	return checkStatus(result, opts)
+}
+
+// buildRequest assembles the request up to (but not including) the items and
+// the body: the URL, cookies, basic auth and the flag-sourced headers
+// (-n/--Nheaders, --headers).
+func buildRequest(method, rawURL string, items reqitem.Items, opts *Options) (*core.BaseRequest, error) {
+	url, err := core.GenerateUrl(rawURL, opts.HTTP, opts.QueryParams)
+	if err != nil {
+		return nil, err
 	}
 
 	request := core.NewRequest(method, url)
@@ -78,30 +166,39 @@ func Run(method string, args []string, opts *Options) error {
 		request.BasicAuth = basicAuth
 	}
 
-	// Headers: -n/--Nheaders -> --headers (stdin JSON) -> request items,
-	// later wins. Items are applied last because they are the most explicit
-	// source, and a Key: item must be able to unset what an earlier source set.
+	// Headers: -n/--Nheaders -> --headers (stdin JSON). Request items are
+	// applied afterward, in applyItems, because they are the most explicit
+	// source and a Key: item must be able to unset what an earlier source set.
 	if len(opts.HeadersJS) > 0 {
 		request.WithHeadersMap(opts.HeadersJS)
 	}
 	if opts.Headersjs != "" {
 		if err := request.WithHeaders(opts.Headersjs); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	applyHeaderItems(&request, items)
+
+	return &request, nil
+}
+
+// applyItems layers the request items, and the body (explicit or piped
+// stdin), on top of what buildRequest already assembled.
+func applyItems(request *core.BaseRequest, items reqitem.Items, opts *Options) error {
+	applyHeaderItems(request, items)
 
 	// Body: -b/--Nbody, --body and body-carrying request items are all
 	// explicit sources, and at most one of them may supply a body. Merging a
 	// hand-written JSON body with item-generated fields would require
 	// decoding and re-encoding it, reintroducing exactly the key reordering
 	// the M1.5 decision eliminated, so the two are mutually exclusive instead.
+	// Piped stdin is implicit and is only ever reached when none of the
+	// explicit sources are present — PrepareInput already enforced that.
 	switch {
 	case items.HasBody() && (opts.Body || opts.BodyJS != ""):
 		return errors.New("request items and --Nbody/--body both provide a body; use one or the other")
 
 	case items.HasBody():
-		if err := applyBodyItems(&request, items, opts); err != nil {
+		if err := applyBodyItems(request, items, opts); err != nil {
 			return err
 		}
 
@@ -109,33 +206,46 @@ func Run(method string, args []string, opts *Options) error {
 		if err := request.WithBody(opts.BodyJS, opts.Form, opts.Multipart); err != nil {
 			return err
 		}
+
+	case opts.StdinBody != "":
+		if err := request.WithBody(opts.StdinBody, opts.Form, opts.Multipart); err != nil {
+			return err
+		}
 	}
 
-	// Query: -q was already applied by GenerateUrl above. An item overrides
-	// -q for the same key; repeated items for one key all survive.
-	if err := request.MergeQueryValues(items.QueryValues()); err != nil {
-		return err
+	// Query: -q was already applied by GenerateUrl in buildRequest. An item
+	// overrides -q for the same key; repeated items for one key all survive.
+	return request.MergeQueryValues(items.QueryValues())
+}
+
+// checkStatus turns --check-status into HTTPie's 3/4/5 exit-code scheme, with
+// 2 reserved for a transport failure (checked by the caller via
+// errors.As(err, &*core.TransportError), since that never reaches here: Send
+// already failed before there was a Result to check).
+//
+// Rendering has already happened by the time this runs; this only ever
+// changes the exit code, never the output. Without --check-status, an HTTP
+// error status still exits 0.
+func checkStatus(r *core.Result, opts *Options) error {
+	if !opts.CheckStatus {
+		return nil
 	}
 
-	result, err := request.Send(core.SendOptions{
-		Redirect: opts.Redirect,
-		Insecure: opts.Insecure,
-		Timeout:  opts.Timeout,
-	})
-	if err != nil {
-		return err
+	switch {
+	case r.StatusCode < 300:
+		return nil
+	case r.StatusCode < 400:
+		if opts.Redirect {
+			// The redirect was followed, so the final status is what matters,
+			// and it already passed the check above (or one of the ones below).
+			return nil
+		}
+		return &ExitError{Code: 3}
+	case r.StatusCode < 500:
+		return &ExitError{Code: 4}
+	default:
+		return &ExitError{Code: 5}
 	}
-
-	// Colour is resolved here, once, and passed down. No renderer decides for
-	// itself whether it is talking to a terminal.
-	fmt.Println(render.Render(result, render.Options{
-		ShowStatus:  opts.ShowStatus,
-		ShowHeaders: opts.ShowHeaders,
-		ShowBody:    opts.ShowBody,
-		Color:       render.ColorEnabled(os.Stdout),
-		Style:       opts.Style,
-	}))
-	return nil
 }
 
 // applyHeaderItems applies the Header/HeaderUnset items on top of whatever
@@ -272,11 +382,17 @@ func sharedStdinScanner() *bufio.Scanner {
 	return stdinScanner
 }
 
-// PrepareInput reads nested JSON from stdin when --body or --headers were given.
+// PrepareInput reads any body or headers that come from stdin.
 //
-// When both are set, headers are read first and the body second, matching the
-// order documented in the README.
-func PrepareInput(opts *Options) error {
+// items is needed because a request item that supplies a body suppresses the
+// implicit read of piped stdin.
+//
+// When --headers and --body are both set, headers are read first and the body
+// second, matching the order documented in the README. That shared scanner
+// path owns stdin whenever either flag is set — the piped-body check below
+// never runs in that case — which is what preserves the `--headers --body`
+// regression fix.
+func PrepareInput(opts *Options, items reqitem.Items) error {
 	scanner := sharedStdinScanner()
 
 	if opts.Headers {
@@ -299,7 +415,47 @@ func PrepareInput(opts *Options) error {
 		opts.BodyJS = raw
 	}
 
+	if shouldReadStdinBody(opts, items) {
+		body, err := readStdinBody()
+		if err != nil {
+			return err
+		}
+		opts.StdinBody = body
+	}
+
 	return nil
+}
+
+// shouldReadStdinBody reports whether piped stdin should be read as an
+// implicit request body. Every explicit source must be absent, --ignore-stdin
+// must not have been passed, and stdin must not be a character device — a
+// terminal left attached to stdin must never make the command hang waiting
+// for a body that will never arrive.
+func shouldReadStdinBody(opts *Options, items reqitem.Items) bool {
+	if opts.Headers || opts.Body || opts.IgnoreStdin || opts.BodyJS != "" || items.HasBody() {
+		return false
+	}
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		// Unable to stat stdin: treat it conservatively as a terminal rather
+		// than risk blocking on a read that may never finish.
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice == 0
+}
+
+// readStdinBody reads all of piped stdin as the request body, capped at
+// 10 MiB. An empty read is not an error, so `< /dev/null` and closed-stdin CI
+// runners behave exactly as they did before piped bodies existed.
+func readStdinBody() (string, error) {
+	body, err := io.ReadAll(io.LimitReader(os.Stdin, maxStdinBodySize+1))
+	if err != nil {
+		return "", fmt.Errorf("reading piped body: %w", err)
+	}
+	if len(body) > maxStdinBodySize {
+		return "", errors.New("piped body exceeds the 10 MiB limit")
+	}
+	return string(body), nil
 }
 
 func newScanner(r io.Reader) *bufio.Scanner {

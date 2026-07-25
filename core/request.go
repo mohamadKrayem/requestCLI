@@ -7,13 +7,13 @@
 package core
 
 import (
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	auth "github.com/mohamadkrayem/requestCLI/authentication"
@@ -43,6 +43,25 @@ type BaseRequest struct {
 	// via NewRequest) still works.
 	Unset map[string]bool
 }
+
+// SentRequest is the request as it was actually put on the wire, as structured
+// data. It exists so a front-end can display the request without core printing
+// anything: -v is a rendering problem, not a transport concern.
+type SentRequest struct {
+	Method  string
+	URL     string
+	Proto   string
+	Headers http.Header // final, including defaults, auth and cookies
+	Body    []byte      // nil when there was no body
+}
+
+// TransportError reports a failure to complete the exchange — DNS, connect,
+// TLS or timeout. It is distinct from a request that could not be built, so a
+// caller can choose a different exit code for each.
+type TransportError struct{ Err error }
+
+func (e *TransportError) Error() string { return e.Err.Error() }
+func (e *TransportError) Unwrap() error { return e.Err }
 
 // SendOptions carries the per-invocation transport settings.
 //
@@ -156,14 +175,27 @@ func (req *BaseRequest) Send(opts SendOptions) (*Result, error) {
 		},
 	}
 
-	var bodyReader io.Reader
+	// The body is materialised into []byte before the request is built, rather
+	// than streamed straight from req.MultipartBody, so the exact bytes put on
+	// the wire can be captured into SentRequest below. The multipart body is
+	// already a *bytes.Buffer, so this is not a streaming regression.
+	var bodyBytes []byte
 	hasBody := false
 	if req.Writer != nil {
-		bodyReader = req.MultipartBody
+		b, err := io.ReadAll(req.MultipartBody)
+		if err != nil {
+			return nil, fmt.Errorf("reading multipart body for %s %s: %w", req.Method, req.URL, err)
+		}
+		bodyBytes = b
 		hasBody = true
 	} else if req.Body != "" {
-		bodyReader = strings.NewReader(req.Body)
+		bodyBytes = []byte(req.Body)
 		hasBody = true
+	}
+
+	var bodyReader io.Reader
+	if hasBody {
+		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
 	reqHttp, err := http.NewRequest(req.Method, req.URL, bodyReader)
@@ -197,10 +229,21 @@ func (req *BaseRequest) Send(opts SendOptions) (*Result, error) {
 		reqHttp.AddCookie(&http.Cookie{Name: key, Value: value})
 	}
 
+	// Captured after auth and cookies are applied, so the header set here is
+	// exactly what reached the wire. Populated unconditionally: -v, --offline
+	// and "copy as curl" are all rendering concerns, not transport ones.
+	sentRequest := &SentRequest{
+		Method:  req.Method,
+		URL:     reqHttp.URL.String(),
+		Proto:   reqHttp.Proto,
+		Headers: reqHttp.Header.Clone(),
+		Body:    bodyBytes,
+	}
+
 	start := time.Now()
 	resp, err := client.Do(reqHttp)
 	if err != nil {
-		return nil, fmt.Errorf("sending %s %s: %w", req.Method, req.URL, err)
+		return nil, &TransportError{Err: fmt.Errorf("sending %s %s: %w", req.Method, req.URL, err)}
 	}
 	defer resp.Body.Close()
 
@@ -209,6 +252,7 @@ func (req *BaseRequest) Send(opts SendOptions) (*Result, error) {
 		return nil, err
 	}
 	result.Timing.Total = time.Since(start)
+	result.Request = sentRequest
 	return result, nil
 }
 

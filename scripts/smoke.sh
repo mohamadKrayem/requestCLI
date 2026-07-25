@@ -161,6 +161,18 @@ check "headers+body together (body)" 'a\":1' \
   bash -c "printf '{\n\"X-API-Token\":\"123\"\n};\n{\n\"a\":1\n};\n' | '$BIN' put '$HTTP/' --headers --body -B"
 
 echo
+echo "== Piped stdin body =="
+check "piped body reaches the server" 'name\":\"Mohamad' \
+  bash -c "printf '{\"name\":\"Mohamad\"}' | '$BIN' post '$HTTP/' -B"
+check "--ignore-stdin suppresses the pipe" '"body": ""' \
+  bash -c "printf '{\"name\":\"Mohamad\"}' | '$BIN' post '$HTTP/' -B --ignore-stdin"
+
+echo
+echo "== -v/--verbose =="
+check "-v shows the request line" "GET / HTTP/1.1"  "$BIN" get "$HTTP/" -v -S
+check "-v shows a request header" "Accept:"          "$BIN" get "$HTTP/" -v -S
+
+echo
 echo "== Error handling =="
 check "no URL"            "requires at least 1 arg(s)"    "$BIN" get
 # A second bare URL is no longer an arity error: extra args are request items,
@@ -261,6 +273,29 @@ if [[ $? -ne 0 ]]; then
 else
   printf '  \033[31mFAIL\033[0m failure exits non-zero\n'; FAIL=$((FAIL + 1))
 fi
+
+# check_exit <name> <expected-code> <command...>
+check_exit() {
+  local name="$1" want="$2"; shift 2
+  "$@" >/dev/null 2>&1
+  local got=$?
+  if [[ $got -eq $want ]]; then
+    printf '  \033[32mPASS\033[0m %s\n' "$name"; PASS=$((PASS + 1))
+  else
+    printf '  \033[31mFAIL\033[0m %s\n' "$name"
+    printf '        expected exit %d, got %d\n' "$want" "$got"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
+# Without --check-status, an HTTP error status still exits 0.
+check_exit "no --check-status: 4xx still exits 0" 0 "$BIN" get "$HTTP/status/404"
+
+check_exit "--check-status: success exits 0"        0 "$BIN" get "$HTTP/" --check-status
+check_exit "--check-status: transport failure exits 2" 2 "$BIN" get 127.0.0.1:1 --http --check-status
+check_exit "--check-status: unfollowed 3xx exits 3" 3 "$BIN" get "$HTTP/redirect" --check-status
+check_exit "--check-status: 4xx exits 4"            4 "$BIN" get "$HTTP/status/404" --check-status
+check_exit "--check-status: 5xx exits 5"            5 "$BIN" get "$HTTP/status/500" --check-status
 
 echo
 echo "================================"

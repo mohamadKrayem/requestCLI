@@ -26,6 +26,11 @@ type Result struct {
 	Headers    http.Header
 	Body       []byte
 	Timing     Timing
+
+	// Request is the request as it was actually sent, captured by Send.
+	// Populated unconditionally; whether to display it is a rendering
+	// decision (-v), not a transport one.
+	Request *SentRequest
 }
 
 // Timing records how long the exchange took.
