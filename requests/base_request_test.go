@@ -53,8 +53,9 @@ func TestGenerateUrl(t *testing.T) {
 	}
 }
 
-func TestGenerateUrlRejectsEmpty(t *testing.T) {
-	for _, in := range []string{"", "   "} {
+func TestGenerateUrlRejectsMalformedInput(t *testing.T) {
+	// "://nope" parses to the non-empty host ":" and needs the Hostname check.
+	for _, in := range []string{"", "   ", "://nope", "http://"} {
 		if _, err := GenerateUrl(in, false, nil); err == nil {
 			t.Errorf("GenerateUrl(%q) should have failed", in)
 		}

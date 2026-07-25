@@ -40,6 +40,9 @@ jobs:
       - name: Build
         run: go build ./...
 
+      - name: End-to-end smoke test
+        run: bash scripts/smoke.sh
+
   lint:
     runs-on: ubuntu-latest
     steps:

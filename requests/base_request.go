@@ -122,7 +122,9 @@ func GenerateUrl(reqURL string, forceHTTP bool, queryParams map[string]string) (
 	if err != nil {
 		return "", fmt.Errorf("invalid URL %q: %w", reqURL, err)
 	}
-	if parsed.Host == "" {
+	// Hostname() rather than Host: a malformed input such as "://x" parses to
+	// the non-empty host ":" with no actual hostname in it.
+	if parsed.Hostname() == "" {
 		return "", fmt.Errorf("invalid URL %q: no host", reqURL)
 	}
 

@@ -234,6 +234,16 @@ $ make lint     # requires golangci-lint
 $ make build
 ```
 
+## Testing
+
+See [TESTING.md](TESTING.md) for the full guide, including manual scenarios.
+
+```shell
+$ make test     # unit and integration tests, no network needed
+$ make smoke    # end-to-end run of the real binary against a local fixture
+$ make server   # start the fixture server for manual testing
+```
+
 ## Technologies Used
 
 - Golang
