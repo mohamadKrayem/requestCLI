@@ -14,6 +14,13 @@ coverage.html
 # Product strategy notes, kept local on purpose
 VISION.md
 
+# Locally installed agent skills, not part of the project.
+# Scoped to .claude/skills/ rather than all of .claude/ so project-local
+# config (CLAUDE.md, shared commands) stays trackable.
+.agents/
+.claude/skills/
+skills-lock.json
+
 # Editor / OS noise
 .idea/
 .vscode/
