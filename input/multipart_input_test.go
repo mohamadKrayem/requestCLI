@@ -142,12 +142,12 @@ func TestResolvePath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := resolvePath(tt.in)
+			got, err := ResolvePath(tt.in)
 			if err != nil {
-				t.Fatalf("resolvePath(%q): %v", tt.in, err)
+				t.Fatalf("ResolvePath(%q): %v", tt.in, err)
 			}
 			if got != tt.want {
-				t.Errorf("resolvePath(%q) = %q, want %q", tt.in, got, tt.want)
+				t.Errorf("ResolvePath(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}
@@ -155,7 +155,7 @@ func TestResolvePath(t *testing.T) {
 
 // Regression: generateLocation indexed location[0] without a length check.
 func TestResolvePathRejectsEmpty(t *testing.T) {
-	if _, err := resolvePath(""); err == nil {
-		t.Error("resolvePath(\"\") should return an error, not panic")
+	if _, err := ResolvePath(""); err == nil {
+		t.Error("ResolvePath(\"\") should return an error, not panic")
 	}
 }

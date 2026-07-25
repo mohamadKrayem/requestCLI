@@ -24,8 +24,45 @@ type MultipartInput struct {
 	Writer *multipart.Writer
 }
 
+// Field is one multipart part: either a literal value or a file to attach.
+type Field struct {
+	Name  string
+	Value string
+	Path  string // set instead of Value to attach a file
+}
+
 func NewMultipartInput() MultipartInput {
 	return MultipartInput{}
+}
+
+// NewMultipartInputFromFields builds a multipart body from ordered parts.
+//
+// Parts are written in the order given, unlike NewMultipartInputInJSONFormat
+// whose map iteration order is random — that ordering guarantee is the whole
+// reason this constructor exists alongside it.
+func NewMultipartInputFromFields(fields []Field) (*MultipartInput, error) {
+	m := NewMultipartInput()
+	m.Body = &bytes.Buffer{}
+	m.Writer = multipart.NewWriter(m.Body)
+
+	for _, field := range fields {
+		if field.Path != "" {
+			if err := m.attachFile(field.Name, field.Path); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if err := m.Writer.WriteField(field.Name, field.Value); err != nil {
+			return nil, fmt.Errorf("writing form field %q: %w", field.Name, err)
+		}
+	}
+
+	// Always close: the closing boundary is required even when the form has no
+	// files, otherwise the body is malformed.
+	if err := m.Writer.Close(); err != nil {
+		return nil, fmt.Errorf("finalizing multipart body: %w", err)
+	}
+	return &m, nil
 }
 
 // NewMultipartInputInJSONFormat builds a multipart body from a JSON object.
@@ -86,7 +123,7 @@ func (m *MultipartInput) generateData(jsonMap map[string]any) error {
 
 func (m *MultipartInput) attachFiles() error {
 	for field, path := range m.Files {
-		location, err := resolvePath(path)
+		location, err := ResolvePath(path)
 		if err != nil {
 			return err
 		}
@@ -116,9 +153,9 @@ func (m *MultipartInput) attachFile(field, location string) error {
 	return nil
 }
 
-// resolvePath expands a user-supplied path: "~" is the home directory, a
+// ResolvePath expands a user-supplied path: "~" is the home directory, a
 // leading "/" is absolute, anything else is relative to the working directory.
-func resolvePath(location string) (string, error) {
+func ResolvePath(location string) (string, error) {
 	if location == "" {
 		return "", errors.New("empty file path")
 	}

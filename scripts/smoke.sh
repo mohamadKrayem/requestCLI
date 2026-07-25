@@ -189,6 +189,42 @@ check "url query is not an item" '"b": "c"'           "$BIN" get "$HTTP/?b=c" -B
 check "value may contain @"      '"email": "a@b.com"' "$BIN" get "$HTTP/" -B "email==a@b.com"
 
 echo
+echo "== Request items: body =="
+# Each of the four body encodings is echoed back by the fixture, so a body
+# built with the wrong bytes fails loudly here instead of merely "looking ok".
+check "json item body (no flags)"        'name\":\"Mohamad' \
+  "$BIN" post "$HTTP/" -B "name=Mohamad"
+check "large integer survives via item"  "1234567890123456789" \
+  "$BIN" post "$HTTP/" -B "id:=1234567890123456789"
+check "raw field written verbatim"       'tags\":[1,2]' \
+  "$BIN" post "$HTTP/" -B "tags:=[1,2]"
+check "duplicate item keys: last wins"   'a\":\"2' \
+  "$BIN" post "$HTTP/" -B "a=1" "a=2"
+check_not "duplicate item keys: earlier value dropped" 'a\":\"1' \
+  "$BIN" post "$HTTP/" -B "a=1" "a=2"
+check "form item body with -f (header)"  "x-www-form-urlencoded" \
+  "$BIN" post "$HTTP/" -f -B "name=Mohamad"
+check "form item body with -f (fields)"  "name=Mohamad" \
+  "$BIN" post "$HTTP/" -f -B "name=Mohamad"
+check "key@file implies multipart"       "letter.txt" \
+  "$BIN" post "$HTTP/multipart" -B "avatar@$WORK/fixtures/letter.txt" "name=Mohamad"
+check "implied multipart keeps fields"   '"name": "Mohamad"' \
+  "$BIN" post "$HTTP/multipart" -B "avatar@$WORK/fixtures/letter.txt" "name=Mohamad"
+check "field item on GET becomes query"      '"name": "Mohamad"' \
+  "$BIN" get "$HTTP/" -B "name=Mohamad"
+check "raw array item on GET becomes query"  '"tags": "[1,2]"' \
+  "$BIN" get "$HTTP/" -B "tags:=[1,2]"
+check "items and -b/--body conflict" \
+  "request items and --Nbody/--body both provide a body; use one or the other" \
+  "$BIN" post "$HTTP/" "name=Mohamad" -b '{"x":1}'
+check "file upload with -f is an error" \
+  "a file upload cannot be sent as a url-encoded form; drop -f" \
+  "$BIN" post "$HTTP/" -f "avatar@$WORK/fixtures/letter.txt"
+check "file upload on GET is an error" \
+  "GET cannot send a file upload; use POST, PUT or PATCH" \
+  "$BIN" get "$HTTP/" "avatar@$WORK/fixtures/letter.txt"
+
+echo
 echo "== Output fidelity =="
 # The display path must never decode the payload: doing so silently corrupted
 # large integers, key order, newlines inside strings, and duplicate keys.

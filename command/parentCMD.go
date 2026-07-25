@@ -3,6 +3,7 @@ package command
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	auth "github.com/mohamadkrayem/requestCLI/authentication"
 	"github.com/mohamadkrayem/requestCLI/core"
 	"github.com/mohamadkrayem/requestCLI/formats"
+	"github.com/mohamadkrayem/requestCLI/input"
 	"github.com/mohamadkrayem/requestCLI/render"
 	"github.com/mohamadkrayem/requestCLI/reqitem"
 )
@@ -49,10 +51,6 @@ type Options struct {
 // Run parses args[0] as the URL and args[1:] as request items, builds and
 // sends the request described by opts and the items, then prints the
 // response.
-//
-// Body-carrying items (Field, RawField, FileField, FileUpload) are parsed but
-// not yet applied — that routing is S3. Only header and query items are wired
-// in this slice.
 func Run(method string, args []string, opts *Options) error {
 	if len(args) == 0 {
 		return errors.New("a URL is required")
@@ -93,7 +91,21 @@ func Run(method string, args []string, opts *Options) error {
 	}
 	applyHeaderItems(&request, items)
 
-	if opts.BodyJS != "" {
+	// Body: -b/--Nbody, --body and body-carrying request items are all
+	// explicit sources, and at most one of them may supply a body. Merging a
+	// hand-written JSON body with item-generated fields would require
+	// decoding and re-encoding it, reintroducing exactly the key reordering
+	// the M1.5 decision eliminated, so the two are mutually exclusive instead.
+	switch {
+	case items.HasBody() && (opts.Body || opts.BodyJS != ""):
+		return errors.New("request items and --Nbody/--body both provide a body; use one or the other")
+
+	case items.HasBody():
+		if err := applyBodyItems(&request, items, opts); err != nil {
+			return err
+		}
+
+	case opts.BodyJS != "":
 		if err := request.WithBody(opts.BodyJS, opts.Form, opts.Multipart); err != nil {
 			return err
 		}
@@ -143,6 +155,108 @@ func applyHeaderItems(request *core.BaseRequest, items reqitem.Items) {
 			request.WithoutHeader(item.Key)
 		}
 	}
+}
+
+// applyBodyItems attaches body-carrying request items to the request, picking
+// the encoding named by opts.Form/opts.Multipart, the implied-multipart rule
+// for a key@file item, or query-parameter routing for a verb that carries its
+// data there (GET, DELETE, HEAD, TRACE, OPTIONS, CONNECT).
+func applyBodyItems(request *core.BaseRequest, items reqitem.Items, opts *Options) error {
+	if core.SendsBodyInQuery(request.Method) {
+		if items.HasFileUpload() {
+			return fmt.Errorf("%s cannot send a file upload; use POST, PUT or PATCH", request.Method)
+		}
+		queryBody, err := bodyItemsAsQuery(items)
+		if err != nil {
+			return err
+		}
+		return request.AddQueryString(queryBody)
+	}
+
+	if request.Headers == nil {
+		request.Headers = make(map[string]any)
+	}
+
+	switch {
+	case items.HasFileUpload() && opts.Form:
+		return errors.New("a file upload cannot be sent as a url-encoded form; drop -f")
+
+	case items.HasFileUpload() || opts.Multipart:
+		fields, err := items.MultipartFields()
+		if err != nil {
+			return err
+		}
+		multipartInput, err := input.NewMultipartInputFromFields(fields)
+		if err != nil {
+			return err
+		}
+		request.MultipartBody = multipartInput.Body
+		request.Writer = multipartInput.Writer
+		request.Headers["Content-Type"] = multipartInput.Writer.FormDataContentType()
+		return nil
+
+	case opts.Form:
+		values, err := items.FormValues()
+		if err != nil {
+			return err
+		}
+		request.Body = values.Encode()
+		request.Headers["Content-Type"] = "application/x-www-form-urlencoded"
+		return nil
+
+	default:
+		body, err := items.JSONBody()
+		if err != nil {
+			return err
+		}
+		request.Body = string(body)
+		request.Headers["Content-Type"] = "application/json"
+		return nil
+	}
+}
+
+// bodyItemsAsQuery converts body-carrying items into query parameters for a
+// verb that carries its data there, mirroring the existing map-based handling
+// of e.g. -b '{"a":1}' on GET. Building a map rather than writing bytes in
+// order is safe here, unlike JSONBody: a query string has no meaningful key
+// order of its own, since url.Values.Encode already sorts keys.
+func bodyItemsAsQuery(items reqitem.Items) (map[string]any, error) {
+	values := map[string]any{}
+	for _, item := range items {
+		switch item.Kind {
+		case reqitem.Field:
+			values[item.Key] = item.Value
+
+		case reqitem.FileField:
+			path, err := input.ResolvePath(item.Value)
+			if err != nil {
+				return nil, fmt.Errorf("reading %s for %q: %w", item.Value, item.Arg, err)
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("reading %s for %q: %w", item.Value, item.Arg, err)
+			}
+			values[item.Key] = string(content)
+
+		case reqitem.RawField:
+			if !json.Valid([]byte(item.Value)) {
+				return nil, fmt.Errorf("request item %q is not valid json: %s", item.Arg, item.Value)
+			}
+			var decoded any
+			if err := json.Unmarshal([]byte(item.Value), &decoded); err != nil {
+				return nil, fmt.Errorf("request item %q is not valid json: %s", item.Arg, item.Value)
+			}
+			switch decoded.(type) {
+			case []any, map[string]any:
+				// Written verbatim, as the user typed it, so it stays compact
+				// JSON text rather than Go's "%v" formatting of a slice/map.
+				values[item.Key] = item.Value
+			default:
+				values[item.Key] = decoded
+			}
+		}
+	}
+	return values, nil
 }
 
 // stdinScanner is created once and shared across reads.

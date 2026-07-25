@@ -22,9 +22,14 @@
 package reqitem
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
+
+	"github.com/mohamadkrayem/requestCLI/input"
 )
 
 // Kind is what a request item contributes to the request.
@@ -197,4 +202,183 @@ func (it Items) HasFileUpload() bool {
 		}
 	}
 	return false
+}
+
+// isBodyField reports whether kind is one of Field, RawField, FileField —
+// the kinds that contribute a value to JSONBody/FormValues. FileUpload is
+// deliberately excluded: it only ever reaches MultipartFields.
+func isBodyField(kind Kind) bool {
+	switch kind {
+	case Field, RawField, FileField:
+		return true
+	}
+	return false
+}
+
+// lastOccurrenceOf returns, for each key carried by a matching item, the
+// index of that key's last occurrence among the items. It is the shared
+// mechanism behind "duplicate keys: last occurrence wins and appears at the
+// position of its last occurrence" across all three body encodings.
+func lastOccurrenceOf(it Items, matches func(Kind) bool) map[string]int {
+	last := make(map[string]int)
+	for i, item := range it {
+		if matches(item.Kind) {
+			last[item.Key] = i
+		}
+	}
+	return last
+}
+
+// JSONBody encodes the body items as a JSON object, preserving the order they
+// were written and the exact text of raw (":=") values.
+//
+// The object is built by writing bytes in order rather than through
+// map[string]any, which would sort keys and round large integers through
+// float64 — exactly what the M1.5 decision forbids on the display path, and
+// what would silently corrupt id:=1234567890123456789 on the send path here.
+func (it Items) JSONBody() ([]byte, error) {
+	last := lastOccurrenceOf(it, isBodyField)
+
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	wroteAny := false
+	for i, item := range it {
+		if !isBodyField(item.Kind) || last[item.Key] != i {
+			continue
+		}
+
+		if wroteAny {
+			buf.WriteByte(',')
+		}
+		wroteAny = true
+
+		keyBytes, err := json.Marshal(item.Key)
+		if err != nil {
+			return nil, fmt.Errorf("encoding key %q: %w", item.Key, err)
+		}
+		buf.Write(keyBytes)
+		buf.WriteByte(':')
+
+		switch item.Kind {
+		case Field:
+			valBytes, err := json.Marshal(item.Value)
+			if err != nil {
+				return nil, fmt.Errorf("encoding value for %q: %w", item.Key, err)
+			}
+			buf.Write(valBytes)
+
+		case RawField:
+			if !json.Valid([]byte(item.Value)) {
+				return nil, fmt.Errorf("request item %q is not valid json: %s", item.Arg, item.Value)
+			}
+			buf.WriteString(item.Value)
+
+		case FileField:
+			content, err := readFileField(item)
+			if err != nil {
+				return nil, err
+			}
+			valBytes, err := json.Marshal(content)
+			if err != nil {
+				return nil, fmt.Errorf("encoding value for %q: %w", item.Key, err)
+			}
+			buf.Write(valBytes)
+		}
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+// FormValues encodes the body items as url-encoded form fields.
+//
+// Field and FileField contribute their literal text; RawField contributes its
+// raw JSON text verbatim, so tags:=[1,2] becomes tags=[1,2]. FileUpload is
+// skipped — the caller has already rejected combining a file with -f.
+func (it Items) FormValues() (url.Values, error) {
+	last := lastOccurrenceOf(it, isBodyField)
+
+	values := url.Values{}
+	for i, item := range it {
+		if !isBodyField(item.Kind) || last[item.Key] != i {
+			continue
+		}
+
+		switch item.Kind {
+		case Field:
+			values.Set(item.Key, item.Value)
+
+		case RawField:
+			if !json.Valid([]byte(item.Value)) {
+				return nil, fmt.Errorf("request item %q is not valid json: %s", item.Arg, item.Value)
+			}
+			values.Set(item.Key, item.Value)
+
+		case FileField:
+			content, err := readFileField(item)
+			if err != nil {
+				return nil, err
+			}
+			values.Set(item.Key, content)
+		}
+	}
+	return values, nil
+}
+
+// MultipartFields returns the body items as ordered multipart parts.
+//
+// Parts are written in the order given, matching the ordering guarantee of
+// input.NewMultipartInputFromFields. Duplicate keys follow the same
+// last-occurrence-wins rule as JSONBody and FormValues, applied across all
+// four body kinds together — a field named "avatar" set with = and then with
+// @ is one part, not two.
+func (it Items) MultipartFields() ([]input.Field, error) {
+	isPart := func(kind Kind) bool { return isBodyField(kind) || kind == FileUpload }
+	last := lastOccurrenceOf(it, isPart)
+
+	var fields []input.Field
+	for i, item := range it {
+		if !isPart(item.Kind) || last[item.Key] != i {
+			continue
+		}
+
+		switch item.Kind {
+		case Field:
+			fields = append(fields, input.Field{Name: item.Key, Value: item.Value})
+
+		case RawField:
+			if !json.Valid([]byte(item.Value)) {
+				return nil, fmt.Errorf("request item %q is not valid json: %s", item.Arg, item.Value)
+			}
+			fields = append(fields, input.Field{Name: item.Key, Value: item.Value})
+
+		case FileField:
+			content, err := readFileField(item)
+			if err != nil {
+				return nil, err
+			}
+			fields = append(fields, input.Field{Name: item.Key, Value: content})
+
+		case FileUpload:
+			path, err := input.ResolvePath(item.Value)
+			if err != nil {
+				return nil, fmt.Errorf("reading %s for %q: %w", item.Value, item.Arg, err)
+			}
+			fields = append(fields, input.Field{Name: item.Key, Path: path})
+		}
+	}
+	return fields, nil
+}
+
+// readFileField reads the file named by a FileField item's value, resolving
+// it the same way a FileUpload path is resolved.
+func readFileField(item Item) (string, error) {
+	path, err := input.ResolvePath(item.Value)
+	if err != nil {
+		return "", fmt.Errorf("reading %s for %q: %w", item.Value, item.Arg, err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading %s for %q: %w", item.Value, item.Arg, err)
+	}
+	return string(content), nil
 }

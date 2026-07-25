@@ -8,9 +8,11 @@ import (
 	"github.com/mohamadkrayem/requestCLI/input"
 )
 
-// sendsBodyInQuery reports whether a method carries its data as query
-// parameters rather than as a request body.
-func sendsBodyInQuery(method string) bool {
+// SendsBodyInQuery reports whether a method carries its data as query
+// parameters rather than as a request body. command consults this directly to
+// route body-carrying request items the same way -b already is on these
+// verbs.
+func SendsBodyInQuery(method string) bool {
 	switch method {
 	case http.MethodGet, http.MethodDelete, http.MethodHead,
 		http.MethodTrace, http.MethodOptions, http.MethodConnect:
@@ -31,7 +33,7 @@ func (req *BaseRequest) WithBody(body string, form, multipartForm bool) error {
 		if err != nil {
 			return fmt.Errorf("--form needs a json object as the body: %w", err)
 		}
-		if sendsBodyInQuery(req.Method) {
+		if SendsBodyInQuery(req.Method) {
 			return req.AddQueryString(mapBody)
 		}
 		req.Body = GenerateQueryParams(mapBody)
@@ -49,7 +51,7 @@ func (req *BaseRequest) WithBody(body string, form, multipartForm bool) error {
 		return nil
 
 	default:
-		if sendsBodyInQuery(req.Method) {
+		if SendsBodyInQuery(req.Method) {
 			mapBody, err := formats.ToMapOptionalJS(body)
 			if err != nil {
 				// Not JSON, so it cannot become query params: send it verbatim.
