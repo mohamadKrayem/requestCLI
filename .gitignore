@@ -11,6 +11,9 @@ coverage.html
 .env
 .env.local
 
+# Product strategy notes, kept local on purpose
+VISION.md
+
 # Editor / OS noise
 .idea/
 .vscode/
