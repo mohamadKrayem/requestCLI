@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -244,6 +245,110 @@ func TestRunPutsJSONBodyInQueryForGet(t *testing.T) {
 	}
 	if got.body != "" {
 		t.Errorf("body = %q, want empty for GET", got.body)
+	}
+}
+
+// A header item wins over -n/--headers for the same key: it is the most
+// explicit source and is applied last.
+func TestRunHeaderItemOverridesNheaders(t *testing.T) {
+	var got captured
+	srv := captureServer(t, &got)
+
+	opts := &Options{
+		HeadersJS:  map[string]string{"X-Token": "from-flag"},
+		ShowStatus: true,
+		Timeout:    5 * time.Second,
+	}
+
+	if err := Run(http.MethodGet, []string{srv.URL, "X-Token:from-item"}, opts); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.token != "from-item" {
+		t.Errorf("X-Token = %q, want from-item (item overrides -n)", got.token)
+	}
+}
+
+// A HeaderUnset item ("Key:") must remove a header set by -n and suppress the
+// User-Agent default, regardless of the case used in the item.
+func TestRunHeaderUnsetItemRemovesFlagHeaderAndDefault(t *testing.T) {
+	var gotUA string
+	var seen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA, seen = r.Header.Get("User-Agent"), true
+	}))
+	t.Cleanup(srv.Close)
+
+	opts := &Options{
+		HeadersJS:  map[string]string{"X-Token": "abc"},
+		ShowStatus: true,
+		Timeout:    5 * time.Second,
+	}
+
+	if err := Run(http.MethodGet, []string{srv.URL, "X-Token:", "user-agent:"}, opts); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !seen {
+		t.Fatal("server never received the request")
+	}
+	if gotUA != "" {
+		t.Errorf("User-Agent = %q, want none (unset by a lowercase item)", gotUA)
+	}
+}
+
+// A query item overrides -q for the same key, and a key -q set that no item
+// touches survives unchanged.
+func TestRunQueryItemOverridesDashQAndKeepsOtherKeys(t *testing.T) {
+	var got captured
+	srv := captureServer(t, &got)
+
+	opts := &Options{
+		QueryParams: map[string]string{"a": "1", "b": "2"},
+		ShowStatus:  true,
+		Timeout:     5 * time.Second,
+	}
+
+	if err := Run(http.MethodGet, []string{srv.URL, "b==override"}, opts); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	parsed, err := url.Parse("http://x" + got.uri)
+	if err != nil {
+		t.Fatalf("parse request URI: %v", err)
+	}
+	q := parsed.Query()
+	if q.Get("a") != "1" {
+		t.Errorf("a = %q, want 1 (untouched by items)", q.Get("a"))
+	}
+	if q.Get("b") != "override" {
+		t.Errorf("b = %q, want override (item wins over -q)", q.Get("b"))
+	}
+}
+
+// Repeated query items for the same key all survive, in order.
+func TestRunRepeatedQueryItemsAllSurvive(t *testing.T) {
+	var got captured
+	srv := captureServer(t, &got)
+
+	opts := &Options{ShowStatus: true, Timeout: 5 * time.Second}
+
+	if err := Run(http.MethodGet, []string{srv.URL, "tag==a", "tag==b"}, opts); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	parsed, err := url.Parse("http://x" + got.uri)
+	if err != nil {
+		t.Fatalf("parse request URI: %v", err)
+	}
+	tags := parsed.Query()["tag"]
+	if len(tags) != 2 || tags[0] != "a" || tags[1] != "b" {
+		t.Errorf("tag = %v, want [a b]", tags)
+	}
+}
+
+// A malformed request item is rejected before the request is ever sent.
+func TestRunRejectsAnInvalidRequestItem(t *testing.T) {
+	if err := Run(http.MethodGet, []string{"http://example.com", "b.com"}, &Options{}); err == nil {
+		t.Error("Run should reject a positional argument that is not a request item")
 	}
 }
 

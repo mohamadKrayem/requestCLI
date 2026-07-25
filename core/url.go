@@ -100,6 +100,38 @@ func (req *BaseRequest) AddQueryString(queryParams map[string]any) error {
 	return nil
 }
 
+// MergeQueryValues layers query parameters onto the request URL, on top of
+// whatever GenerateUrl already applied from -q.
+//
+// For each key present in values, any existing values for that key are
+// replaced with values[key] (in order); keys absent from values are left
+// untouched. This lets a caller (e.g. a request item) override one query key
+// without needing to know whether -q already set it, while a key with no
+// override survives unchanged. It takes plain url.Values rather than any
+// CLI-specific type so core stays free of a dependency on request-item syntax.
+func (req *BaseRequest) MergeQueryValues(values url.Values) error {
+	if len(values) == 0 {
+		return nil
+	}
+
+	parsed, err := url.Parse(req.URL)
+	if err != nil {
+		return fmt.Errorf("invalid URL %q: %w", req.URL, err)
+	}
+
+	query := parsed.Query()
+	for key, vals := range values {
+		query.Del(key)
+		for _, v := range vals {
+			query.Add(key, v)
+		}
+	}
+	parsed.RawQuery = query.Encode()
+
+	req.URL = parsed.String()
+	return nil
+}
+
 // toQueryValue renders a decoded JSON value as a query-string value.
 func toQueryValue(value any) string {
 	switch m := value.(type) {

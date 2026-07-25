@@ -37,7 +37,12 @@ func TestEachSubcommandSendsItsOwnVerb(t *testing.T) {
 
 // Regression: head, options, put and patch were missing their Args validator
 // and panicked on args[0] when no URL was given.
-func TestEverySubcommandRequiresExactlyOneURL(t *testing.T) {
+//
+// A second positional argument is now accepted at this stage — it may be a
+// request item, not a second URL — and rejected later by reqitem.Parse (see
+// reqitem's own tests) if it doesn't parse as one. cmd must not import
+// reqitem, so that rejection is not re-tested from this package.
+func TestEverySubcommandRequiresAtLeastOneURL(t *testing.T) {
 	for _, m := range methods {
 		t.Run(m.use, func(t *testing.T) {
 			c := newMethodCmd(m.use, m.method, m.short, m.aliases)
@@ -51,8 +56,8 @@ func TestEverySubcommandRequiresExactlyOneURL(t *testing.T) {
 			if err := c.Args(c, []string{"example.com"}); err != nil {
 				t.Errorf("rejected a single URL: %v", err)
 			}
-			if err := c.Args(c, []string{"a.com", "b.com"}); err == nil {
-				t.Error("accepted two URLs; it should take exactly one")
+			if err := c.Args(c, []string{"a.com", "b.com"}); err != nil {
+				t.Errorf("rejected a second positional argument at the Args stage: %v", err)
 			}
 		})
 	}

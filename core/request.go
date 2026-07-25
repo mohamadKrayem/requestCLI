@@ -36,6 +36,12 @@ type BaseRequest struct {
 	BasicAuth     auth.BaseAuth
 	MultipartBody io.Reader
 	Writer        *multipart.Writer
+
+	// Unset holds header names (canonical form) that were deliberately
+	// removed with WithoutHeader. The zero value is a nil map, which every
+	// read here tolerates, so a BaseRequest built as a struct literal (not
+	// via NewRequest) still works.
+	Unset map[string]bool
 }
 
 // SendOptions carries the per-invocation transport settings.
@@ -60,11 +66,31 @@ func NewRequest(method, url string) BaseRequest {
 }
 
 // WithHeader adds a single header to the request.
+//
+// The key is canonicalised the same way http.Header.Set already canonicalises
+// on the wire, so a later WithoutHeader("user-agent") reliably matches a
+// header set here as "User-Agent".
 func (req *BaseRequest) WithHeader(key string, value string) *BaseRequest {
 	if req.Headers == nil {
 		req.Headers = make(map[string]any)
 	}
+	key = http.CanonicalHeaderKey(key)
 	req.Headers[key] = value
+	// Setting a header explicitly cancels an earlier unset, so the last thing
+	// the caller asked for is what happens. delete on a nil map is a no-op.
+	delete(req.Unset, key)
+	return req
+}
+
+// WithoutHeader marks a header as deliberately unset: it is removed if
+// already present, and addDefaultHeaders will never fill it back in.
+func (req *BaseRequest) WithoutHeader(key string) *BaseRequest {
+	key = http.CanonicalHeaderKey(key)
+	if req.Unset == nil {
+		req.Unset = make(map[string]bool)
+	}
+	req.Unset[key] = true
+	delete(req.Headers, key)
 	return req
 }
 
@@ -147,7 +173,20 @@ func (req *BaseRequest) Send(opts SendOptions) (*Result, error) {
 
 	req.addDefaultHeaders(hasBody)
 	for key, value := range req.Headers {
+		// A key set through WithHeadersMap/WithHeaders keeps whatever case the
+		// caller gave it, so the Unset check must canonicalise here too.
+		if req.Unset[http.CanonicalHeaderKey(key)] {
+			continue
+		}
 		reqHttp.Header.Set(key, fmt.Sprintf("%v", value))
+	}
+	// net/http is alone in filling in its own default (Go-http-client/x.y)
+	// when User-Agent is entirely absent from reqHttp.Header, so skipping the
+	// copy above suppresses every other unset header but not this one.
+	// Explicitly setting it to "" makes net/http both skip its default and
+	// omit the header from the wire, rather than sending it empty.
+	if req.Unset["User-Agent"] {
+		reqHttp.Header.Set("User-Agent", "")
 	}
 
 	if req.BasicAuth.Username != "" {
@@ -173,25 +212,32 @@ func (req *BaseRequest) Send(opts SendOptions) (*Result, error) {
 	return result, nil
 }
 
-// addDefaultHeaders fills in headers the user did not set explicitly.
+// addDefaultHeaders fills in headers the user did not set explicitly, and
+// never fills in one the user explicitly unset with WithoutHeader.
 func (req *BaseRequest) addDefaultHeaders(hasBody bool) {
 	if req.Headers == nil {
 		req.Headers = make(map[string]any)
 	}
-	setIfAbsent(req.Headers, "Accept", "*/*")
-	setIfAbsent(req.Headers, "User-Agent", "requestCLI/"+Version)
+	req.setIfAbsent("Accept", "*/*")
+	req.setIfAbsent("User-Agent", "requestCLI/"+Version)
 	// Requested explicitly because NewResult decodes brotli itself, which
 	// net/http does not do.
-	setIfAbsent(req.Headers, "Accept-Encoding", "gzip, deflate, br")
+	req.setIfAbsent("Accept-Encoding", "gzip, deflate, br")
 
 	// A Content-Type on a bodyless request is meaningless and confuses some servers.
 	if hasBody {
-		setIfAbsent(req.Headers, "Content-Type", "application/json")
+		req.setIfAbsent("Content-Type", "application/json")
 	}
 }
 
-func setIfAbsent(headers map[string]any, key, value string) {
-	if _, ok := headers[key]; !ok {
-		headers[key] = value
+// setIfAbsent fills in a default header unless the caller already set it or
+// deliberately unset it. req.Unset may be nil; reading a nil map is a safe
+// no-op that reports "nothing unset".
+func (req *BaseRequest) setIfAbsent(key, value string) {
+	if req.Unset[key] {
+		return
+	}
+	if _, ok := req.Headers[key]; !ok {
+		req.Headers[key] = value
 	}
 }

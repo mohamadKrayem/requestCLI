@@ -14,6 +14,7 @@ import (
 	"github.com/mohamadkrayem/requestCLI/core"
 	"github.com/mohamadkrayem/requestCLI/formats"
 	"github.com/mohamadkrayem/requestCLI/render"
+	"github.com/mohamadkrayem/requestCLI/reqitem"
 )
 
 // maxInputSize caps a single stdin-supplied JSON document.
@@ -45,10 +46,23 @@ type Options struct {
 	Redirect  bool
 }
 
-// Run builds and sends the request described by opts, then prints the response.
+// Run parses args[0] as the URL and args[1:] as request items, builds and
+// sends the request described by opts and the items, then prints the
+// response.
+//
+// Body-carrying items (Field, RawField, FileField, FileUpload) are parsed but
+// not yet applied — that routing is S3. Only header and query items are wired
+// in this slice.
 func Run(method string, args []string, opts *Options) error {
 	if len(args) == 0 {
 		return errors.New("a URL is required")
+	}
+
+	// The URL is never item-parsed: args[1:] only, so a URL containing "="
+	// or ":" (a query string, a scheme-less host:port) is structurally safe.
+	items, err := reqitem.Parse(args[1:])
+	if err != nil {
+		return err
 	}
 
 	url, err := core.GenerateUrl(args[0], opts.HTTP, opts.QueryParams)
@@ -66,7 +80,9 @@ func Run(method string, args []string, opts *Options) error {
 		request.BasicAuth = basicAuth
 	}
 
-	// Both header sources merge, so -n and --headers can be combined.
+	// Headers: -n/--Nheaders -> --headers (stdin JSON) -> request items,
+	// later wins. Items are applied last because they are the most explicit
+	// source, and a Key: item must be able to unset what an earlier source set.
 	if len(opts.HeadersJS) > 0 {
 		request.WithHeadersMap(opts.HeadersJS)
 	}
@@ -75,11 +91,18 @@ func Run(method string, args []string, opts *Options) error {
 			return err
 		}
 	}
+	applyHeaderItems(&request, items)
 
 	if opts.BodyJS != "" {
 		if err := request.WithBody(opts.BodyJS, opts.Form, opts.Multipart); err != nil {
 			return err
 		}
+	}
+
+	// Query: -q was already applied by GenerateUrl above. An item overrides
+	// -q for the same key; repeated items for one key all survive.
+	if err := request.MergeQueryValues(items.QueryValues()); err != nil {
+		return err
 	}
 
 	result, err := request.Send(core.SendOptions{
@@ -101,6 +124,25 @@ func Run(method string, args []string, opts *Options) error {
 		Style:       opts.Style,
 	}))
 	return nil
+}
+
+// applyHeaderItems applies the Header/HeaderUnset items on top of whatever
+// headers -n and --headers already set.
+//
+// It walks the items in the order they were written rather than using
+// HeaderOps, which groups sets and unsets into separate lists. Grouping would
+// make an unset beat a set no matter which the user typed last, so
+// `X-Token: X-Token:a` would drop the value instead of setting it. Across
+// sources the order is unchanged: -n/--headers, then items, later wins.
+func applyHeaderItems(request *core.BaseRequest, items reqitem.Items) {
+	for _, item := range items {
+		switch item.Kind {
+		case reqitem.Header:
+			request.WithHeader(item.Key, item.Value)
+		case reqitem.HeaderUnset:
+			request.WithoutHeader(item.Key)
+		}
+	}
 }
 
 // stdinScanner is created once and shared across reads.

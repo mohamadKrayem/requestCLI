@@ -82,10 +82,10 @@ var methods = []struct {
 // left four subcommands without argument checks.
 func newMethodCmd(use, method, short string, aliases []string) *cobra.Command {
 	return &cobra.Command{
-		Use:     use + " URL",
+		Use:     use + " URL [REQUEST_ITEM ...]",
 		Aliases: aliases,
 		Short:   short,
-		Args:    cobra.ExactArgs(1),
+		Args:    cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := command.PrepareInput(opts); err != nil {
 				return err

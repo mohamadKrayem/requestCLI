@@ -70,7 +70,12 @@ for port in 8080 8443; do
   fi
 done
 
-go run "$ROOT/scripts/echoserver" >"$WORK/server.log" 2>&1 &
+# Build the fixture and run the binary directly rather than `go run`: go run
+# execs the compiled program as a *child*, so killing the pid we captured left
+# the real server holding the ports after the script exited. That is what the
+# port check above kept tripping over.
+go build -o "$WORK/echoserver" "$ROOT/scripts/echoserver" || exit 1
+"$WORK/echoserver" >"$WORK/server.log" 2>&1 &
 SERVER_PID=$!
 
 for _ in $(seq 1 30); do
@@ -157,12 +162,31 @@ check "headers+body together (body)" 'a\":1' \
 
 echo
 echo "== Error handling =="
-check "no URL"            "accepts 1 arg(s), received 0" "$BIN" get
-check "too many URLs"     "accepts 1 arg(s), received 2" "$BIN" get a.com b.com
+check "no URL"            "requires at least 1 arg(s)"    "$BIN" get
+# A second bare URL is no longer an arity error: extra args are request items,
+# so it is rejected by the item grammar instead.
+check "stray second URL"  "not a request item: \"b.com\"" "$BIN" get a.com b.com
 check "unknown command"   "unknown command"              "$BIN" fetch example.com
 check "connection refused" "connection refused"          "$BIN" get 127.0.0.1:1 --http
 check "malformed url"     "no host"                      "$BIN" get "://nope"
 check "malformed json"    "parsing json"                 "$BIN" post "$HTTP/" --multi -b '{bad'
+
+echo
+echo "== Request items: headers and query =="
+check "header item"              '"X-Token": "abc"'   "$BIN" get "$HTTP/" -B "X-Token:abc"
+check "header item overrides -n" '"X-Token": "item"'  "$BIN" get "$HTTP/" -B -n X-Token=flag "X-Token:item"
+check "query item"               '"a": "1"'           "$BIN" get "$HTTP/" -B "a==1"
+check "query item overrides -q"  '"a": "item"'        "$BIN" get "$HTTP/" -B -q a=flag "a==item"
+check "other -q keys survive"    '"keep": "yes"'      "$BIN" get "$HTTP/" -B -q keep=yes "a==item"
+check "repeated query items"     '"tag": "one,two"'   "$BIN" get "$HTTP/" -B "tag==one" "tag==two"
+# A trailing colon removes a header the tool would otherwise send by default.
+check_not "header item unsets a default" "User-Agent" "$BIN" get "$HTTP/" -B "User-Agent:"
+check_not "unset is case-insensitive"    "User-Agent" "$BIN" get "$HTTP/" -B "user-agent:"
+# Setting after unsetting must win: last thing written is what happens.
+check "set after unset wins"     '"X-Token": "a"'     "$BIN" get "$HTTP/" -B "X-Token:" "X-Token:a"
+# The URL is never item-parsed, so its own '=' and ':' are safe.
+check "url query is not an item" '"b": "c"'           "$BIN" get "$HTTP/?b=c" -B
+check "value may contain @"      '"email": "a@b.com"' "$BIN" get "$HTTP/" -B "email==a@b.com"
 
 echo
 echo "== Output fidelity =="

@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -333,6 +334,71 @@ func TestSendVerifiesTLSByDefault(t *testing.T) {
 	req = NewRequest(http.MethodGet, srv.URL)
 	if _, err := req.Send(SendOptions{Insecure: true}); err != nil {
 		t.Fatalf("--insecure should accept a self-signed certificate, got: %v", err)
+	}
+}
+
+// Regression guard for WithoutHeader: it must suppress the default even when
+// the case used to unset it differs from the case used to set the default.
+func TestWithoutHeaderSuppressesDefault(t *testing.T) {
+	var got string
+	var seen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, seen = r.Header.Get("User-Agent"), true
+	}))
+	defer srv.Close()
+
+	req := NewRequest(http.MethodGet, srv.URL)
+	req.WithoutHeader("user-agent")
+
+	if _, err := req.Send(SendOptions{}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if !seen {
+		t.Fatal("server never received the request")
+	}
+	if got != "" {
+		t.Errorf("User-Agent = %q, want none (suppressed by WithoutHeader)", got)
+	}
+}
+
+// WithoutHeader must also remove a header explicitly set earlier, not merely
+// suppress the default.
+func TestWithoutHeaderRemovesAnAlreadySetHeader(t *testing.T) {
+	var ok bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ok = r.Header.Get("X-Token") != ""
+	}))
+	defer srv.Close()
+
+	req := NewRequest(http.MethodGet, srv.URL)
+	req.WithHeader("X-Token", "abc")
+	req.WithoutHeader("x-token") // different case, must still match
+
+	if _, err := req.Send(SendOptions{}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if ok {
+		t.Error("X-Token was sent despite WithoutHeader")
+	}
+}
+
+func TestMergeQueryValuesOverridesSameKeyAndKeepsOthers(t *testing.T) {
+	req := NewRequest(http.MethodGet, "http://example.com/?a=1&b=2")
+
+	if err := req.MergeQueryValues(map[string][]string{"b": {"x", "y"}}); err != nil {
+		t.Fatalf("MergeQueryValues: %v", err)
+	}
+
+	parsed, err := url.Parse(req.URL)
+	if err != nil {
+		t.Fatalf("parse resulting URL: %v", err)
+	}
+	q := parsed.Query()
+	if q.Get("a") != "1" {
+		t.Errorf("a = %q, want 1 (untouched key must survive)", q.Get("a"))
+	}
+	if got := q["b"]; len(got) != 2 || got[0] != "x" || got[1] != "y" {
+		t.Errorf("b = %v, want [x y] (override replaces, repeats survive in order)", got)
 	}
 }
 
