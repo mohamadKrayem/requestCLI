@@ -2,9 +2,12 @@ package command
 
 import (
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -349,6 +352,243 @@ func TestRunRepeatedQueryItemsAllSurvive(t *testing.T) {
 func TestRunRejectsAnInvalidRequestItem(t *testing.T) {
 	if err := Run(http.MethodGet, []string{"http://example.com", "b.com"}, &Options{}); err == nil {
 		t.Error("Run should reject a positional argument that is not a request item")
+	}
+}
+
+// Regression: applyHeaderItems used to walk HeaderOps's grouped set/unset
+// lists, which put every unset ahead of every set regardless of what the user
+// actually typed last. "X-Token: X-Token:a" must end up SET, since the
+// second item was written after the first.
+func TestRunLaterHeaderItemBeatsAnEarlierUnsetForTheSameKey(t *testing.T) {
+	var got captured
+	srv := captureServer(t, &got)
+
+	opts := &Options{ShowStatus: true, Timeout: 5 * time.Second}
+
+	if err := Run(http.MethodGet, []string{srv.URL, "X-Token:", "X-Token:a"}, opts); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.token != "a" {
+		t.Errorf("X-Token = %q, want a (a later set must beat an earlier unset)", got.token)
+	}
+}
+
+// The opposite order must also hold: a later unset removes an earlier set.
+func TestRunLaterHeaderUnsetBeatsAnEarlierSetForTheSameKey(t *testing.T) {
+	var got captured
+	srv := captureServer(t, &got)
+
+	opts := &Options{ShowStatus: true, Timeout: 5 * time.Second}
+
+	if err := Run(http.MethodGet, []string{srv.URL, "X-Token:a", "X-Token:"}, opts); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.token != "" {
+		t.Errorf("X-Token = %q, want empty (a later unset must beat an earlier set)", got.token)
+	}
+}
+
+// Request items and -b are mutually exclusive: merging them would require
+// decoding the user's hand-written JSON to splice item fields in, which
+// reintroduces the key-reordering problem this feature exists to avoid.
+func TestRunRejectsBodyItemsCombinedWithDashB(t *testing.T) {
+	opts := &Options{Body: true, BodyJS: `{"a":1}`}
+	err := Run(http.MethodPost, []string{"http://example.com", "name=Mo"}, opts)
+	if err == nil {
+		t.Fatal("Run should reject request items combined with -b")
+	}
+	want := "request items and --Nbody/--body both provide a body; use one or the other"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+// Same conflict, with --body (BodyJS set but Body flag false — the case
+// where the JSON came from stdin rather than -b) instead of -b.
+func TestRunRejectsBodyItemsCombinedWithDashDashBody(t *testing.T) {
+	opts := &Options{BodyJS: `{"a":1}`}
+	err := Run(http.MethodPost, []string{"http://example.com", "age:=22"}, opts)
+	if err == nil {
+		t.Fatal("Run should reject request items combined with --body")
+	}
+	want := "request items and --Nbody/--body both provide a body; use one or the other"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+// With no -f/--multi, body items produce a JSON object with the matching
+// Content-Type, key order preserved.
+func TestRunBodyItemsDefaultToJSON(t *testing.T) {
+	var got captured
+	var contentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		contentType = r.Header.Get("Content-Type")
+		b, _ := io.ReadAll(r.Body)
+		got.body = string(b)
+	}))
+	t.Cleanup(srv.Close)
+
+	opts := &Options{ShowStatus: true, Timeout: 5 * time.Second}
+	if err := Run(http.MethodPost, []string{srv.URL, "b:=2", "a:=1"}, opts); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if contentType != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", contentType)
+	}
+	if got.body != `{"b":2,"a":1}` {
+		t.Errorf("body = %q, want the fields in written order, never sorted", got.body)
+	}
+}
+
+// -f encodes body items as a url-encoded form.
+func TestRunBodyItemsWithFormFlagEncodeAsForm(t *testing.T) {
+	var got captured
+	var contentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		contentType = r.Header.Get("Content-Type")
+		b, _ := io.ReadAll(r.Body)
+		got.body = string(b)
+	}))
+	t.Cleanup(srv.Close)
+
+	opts := &Options{Form: true, ShowStatus: true, Timeout: 5 * time.Second}
+	if err := Run(http.MethodPost, []string{srv.URL, "name=Mo", "age:=22"}, opts); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if contentType != "application/x-www-form-urlencoded" {
+		t.Errorf("Content-Type = %q, want application/x-www-form-urlencoded", contentType)
+	}
+	if got.body != "age=22&name=Mo" {
+		t.Errorf("body = %q, want age=22&name=Mo", got.body)
+	}
+}
+
+// --multi encodes body items as multipart, and the server sees the file's
+// real content, not just its path.
+func TestRunBodyItemsWithMultiFlagEncodeAsMultipart(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "me.png")
+	if err := os.WriteFile(path, []byte("png-bytes"), 0o600); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	var contentType string
+	var form *multipart.Form
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		contentType = r.Header.Get("Content-Type")
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("server: ParseMultipartForm: %v", err)
+			return
+		}
+		form = r.MultipartForm
+	}))
+	t.Cleanup(srv.Close)
+
+	opts := &Options{Multipart: true, ShowStatus: true, Timeout: 5 * time.Second}
+	if err := Run(http.MethodPost, []string{srv.URL, "name=Mo", "avatar@" + path}, opts); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.HasPrefix(contentType, "multipart/form-data") {
+		t.Fatalf("Content-Type = %q, want multipart/form-data", contentType)
+	}
+	if got := form.Value["name"]; len(got) != 1 || got[0] != "Mo" {
+		t.Errorf(`form field "name" = %v, want ["Mo"]`, got)
+	}
+	if len(form.File["avatar"]) != 1 {
+		t.Fatalf("expected one uploaded file named avatar, got %v", form.File)
+	}
+}
+
+// A key@file item implies multipart even with no flag at all.
+func TestRunFileUploadImpliesMultipartWithoutAnyFlag(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "me.png")
+	if err := os.WriteFile(path, []byte("png-bytes"), 0o600); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	var contentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		contentType = r.Header.Get("Content-Type")
+	}))
+	t.Cleanup(srv.Close)
+
+	opts := &Options{ShowStatus: true, Timeout: 5 * time.Second}
+	if err := Run(http.MethodPost, []string{srv.URL, "avatar@" + path}, opts); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.HasPrefix(contentType, "multipart/form-data") {
+		t.Errorf("Content-Type = %q, want multipart/form-data (implied by the file upload)", contentType)
+	}
+}
+
+// A file upload combined with -f is an error, not a silently dropped file.
+func TestRunFileUploadWithFormFlagIsAnError(t *testing.T) {
+	opts := &Options{Form: true}
+	err := Run(http.MethodPost, []string{"http://example.com", "avatar@./me.png"}, opts)
+	if err == nil {
+		t.Fatal("Run should reject a file upload combined with -f")
+	}
+	want := "a file upload cannot be sent as a url-encoded form; drop -f"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+// A file upload on a verb that carries its data in the query string is an
+// error, since there is nowhere for the file's bytes to go.
+func TestRunFileUploadOnQueryVerbIsAnError(t *testing.T) {
+	opts := &Options{}
+	err := Run(http.MethodGet, []string{"http://example.com", "avatar@./me.png"}, opts)
+	if err == nil {
+		t.Fatal("Run should reject a file upload on GET")
+	}
+	want := "GET cannot send a file upload; use POST, PUT or PATCH"
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err.Error(), want)
+	}
+}
+
+// On a verb that carries its data in the query string, body-carrying items
+// become query parameters instead: a string field, a raw number, a raw array
+// kept as compact JSON text, and a file field contributing its content.
+func TestRunBodyItemsOnQueryVerbBecomeQueryParams(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bio.txt")
+	if err := os.WriteFile(path, []byte("hello"), 0o600); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	var got captured
+	srv := captureServer(t, &got)
+
+	opts := &Options{ShowStatus: true, Timeout: 5 * time.Second}
+	if err := Run(http.MethodGet, []string{
+		srv.URL, "name=Mo", "age:=22", "tags:=[1,2]", "bio=@" + path,
+	}, opts); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if got.body != "" {
+		t.Errorf("body = %q, want empty for GET", got.body)
+	}
+
+	parsed, err := url.Parse("http://x" + got.uri)
+	if err != nil {
+		t.Fatalf("parse request URI: %v", err)
+	}
+	q := parsed.Query()
+	if q.Get("name") != "Mo" {
+		t.Errorf("name = %q, want Mo", q.Get("name"))
+	}
+	if q.Get("age") != "22" {
+		t.Errorf("age = %q, want 22", q.Get("age"))
+	}
+	if q.Get("tags") != "[1,2]" {
+		t.Errorf("tags = %q, want compact JSON text [1,2]", q.Get("tags"))
+	}
+	if q.Get("bio") != "hello" {
+		t.Errorf("bio = %q, want the file's content", q.Get("bio"))
 	}
 }
 

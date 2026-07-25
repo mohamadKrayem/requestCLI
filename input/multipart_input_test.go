@@ -159,3 +159,59 @@ func TestResolvePathRejectsEmpty(t *testing.T) {
 		t.Error("ResolvePath(\"\") should return an error, not panic")
 	}
 }
+
+// NewMultipartInputFromFields writes parts in the order given, unlike
+// NewMultipartInputInJSONFormat whose map iteration order is random. This is
+// the whole reason the constructor exists, so it is asserted directly against
+// the bytes on the wire, not just against the parsed-back form (a
+// multipart.Reader would hide reordering since form.Value/form.File are also
+// keyed maps).
+func TestNewMultipartInputFromFieldsPreservesOrder(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "letter.txt")
+	if err := os.WriteFile(path, []byte("hello from a file"), 0o600); err != nil {
+		t.Fatalf("writing fixture: %v", err)
+	}
+
+	m, err := NewMultipartInputFromFields([]Field{
+		{Name: "z", Value: "first"},
+		{Name: "a", Value: "second"},
+		{Name: "letter", Path: path},
+	})
+	if err != nil {
+		t.Fatalf("NewMultipartInputFromFields: %v", err)
+	}
+
+	body := m.Body.String()
+	zIdx := strings.Index(body, `name="z"`)
+	aIdx := strings.Index(body, `name="a"`)
+	letterIdx := strings.Index(body, `name="letter"`)
+	if zIdx == -1 || aIdx == -1 || letterIdx == -1 {
+		t.Fatalf("one or more fields missing from body: %s", body)
+	}
+	if !(zIdx < aIdx && aIdx < letterIdx) {
+		t.Errorf("parts out of order: z@%d a@%d letter@%d, want z < a < letter", zIdx, aIdx, letterIdx)
+	}
+
+	form := parseForm(t, m)
+	if got := form.Value["z"]; len(got) != 1 || got[0] != "first" {
+		t.Errorf(`field "z" = %v, want ["first"]`, got)
+	}
+	if got := form.Value["a"]; len(got) != 1 || got[0] != "second" {
+		t.Errorf(`field "a" = %v, want ["second"]`, got)
+	}
+}
+
+// An unresolvable file attachment must return an error, not panic and not
+// silently produce a part with empty content.
+func TestNewMultipartInputFromFieldsMissingFileReturnsError(t *testing.T) {
+	_, err := NewMultipartInputFromFields([]Field{
+		{Name: "avatar", Path: "/definitely/does/not/exist.png"},
+	})
+	if err == nil {
+		t.Fatal("expected an error for a missing attached file")
+	}
+	if !strings.Contains(err.Error(), "opening") {
+		t.Errorf("error = %v, want it to mention opening the file", err)
+	}
+}

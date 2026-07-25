@@ -382,6 +382,36 @@ func TestWithoutHeaderRemovesAnAlreadySetHeader(t *testing.T) {
 	}
 }
 
+// WithHeader must cancel an earlier WithoutHeader for the same key (in any
+// case), so that setting a header after unsetting it actually sends it —
+// the last operation the caller performed is what happens.
+func TestWithHeaderCancelsAnEarlierUnset(t *testing.T) {
+	var got string
+	var seen bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, seen = r.Header.Get("X-Token"), true
+	}))
+	defer srv.Close()
+
+	req := NewRequest(http.MethodGet, srv.URL)
+	req.WithoutHeader("x-token")
+	req.WithHeader("X-Token", "a")
+
+	if _, err := req.Send(SendOptions{}); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if !seen {
+		t.Fatal("server never received the request")
+	}
+	if got != "a" {
+		t.Errorf("X-Token = %q, want a (WithHeader must cancel the earlier unset)", got)
+	}
+
+	if req.Unset["X-Token"] {
+		t.Error("Unset[X-Token] still true after WithHeader; WithHeader must clear it")
+	}
+}
+
 func TestMergeQueryValuesOverridesSameKeyAndKeepsOthers(t *testing.T) {
 	req := NewRequest(http.MethodGet, "http://example.com/?a=1&b=2")
 
