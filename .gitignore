@@ -11,8 +11,9 @@ coverage.html
 .env
 .env.local
 
-# Product strategy notes, kept local on purpose
+# Product strategy and design notes, kept local on purpose
 VISION.md
+M1-BRIEF.md
 
 # Locally installed agent skills, not part of the project.
 # Scoped to .claude/skills/ rather than all of .claude/ so project-local
