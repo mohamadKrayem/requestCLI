@@ -35,6 +35,8 @@ import (
 // Kind is what a request item contributes to the request.
 type Kind uint8
 
+// The kinds of request item, one per separator form. The zero value is not a
+// valid Kind, so an unparsed Item is distinguishable from a Header.
 const (
 	Header      Kind = iota + 1 // Key:value
 	HeaderUnset                 // Key:

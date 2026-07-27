@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func TestGenerateUrl(t *testing.T) {
+func TestGenerateURL(t *testing.T) {
 	tests := []struct {
 		name      string
 		in        string
@@ -43,22 +43,22 @@ func TestGenerateUrl(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := GenerateUrl(tt.in, tt.forceHTTP, tt.query)
+			got, err := GenerateURL(tt.in, tt.forceHTTP, tt.query)
 			if err != nil {
-				t.Fatalf("GenerateUrl(%q) returned error: %v", tt.in, err)
+				t.Fatalf("GenerateURL(%q) returned error: %v", tt.in, err)
 			}
 			if got != tt.want {
-				t.Errorf("GenerateUrl(%q) = %q, want %q", tt.in, got, tt.want)
+				t.Errorf("GenerateURL(%q) = %q, want %q", tt.in, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestGenerateUrlRejectsMalformedInput(t *testing.T) {
+func TestGenerateURLRejectsMalformedInput(t *testing.T) {
 	// "://nope" parses to the non-empty host ":" and needs the Hostname check.
 	for _, in := range []string{"", "   ", "://nope", "http://"} {
-		if _, err := GenerateUrl(in, false, nil); err == nil {
-			t.Errorf("GenerateUrl(%q) should have failed", in)
+		if _, err := GenerateURL(in, false, nil); err == nil {
+			t.Errorf("GenerateURL(%q) should have failed", in)
 		}
 	}
 }
@@ -185,7 +185,7 @@ func TestSendUsesTheGivenMethod(t *testing.T) {
 	} {
 		t.Run(method, func(t *testing.T) {
 			var got string
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				got = r.Method
 			}))
 			defer srv.Close()
@@ -204,7 +204,7 @@ func TestSendUsesTheGivenMethod(t *testing.T) {
 func TestSendOmitsContentTypeOnBodylessRequest(t *testing.T) {
 	var contentType string
 	var seen bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		contentType, seen = r.Header.Get("Content-Type"), true
 	}))
 	defer srv.Close()
@@ -223,7 +223,7 @@ func TestSendOmitsContentTypeOnBodylessRequest(t *testing.T) {
 
 func TestSendSetsContentTypeWhenBodyPresent(t *testing.T) {
 	var contentType, body string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		contentType = r.Header.Get("Content-Type")
 		b, _ := io.ReadAll(r.Body)
 		body = string(b)
@@ -249,7 +249,7 @@ func TestSendSetsContentTypeWhenBodyPresent(t *testing.T) {
 func TestSendAppliesBasicAuthAndCookies(t *testing.T) {
 	var user, pass, cookie string
 	var ok bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		user, pass, ok = r.BasicAuth()
 		if c, err := r.Cookie("session"); err == nil {
 			cookie = c.Value
@@ -274,7 +274,7 @@ func TestSendAppliesBasicAuthAndCookies(t *testing.T) {
 }
 
 func TestSendHonoursTimeout(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		time.Sleep(500 * time.Millisecond)
 	}))
 	defer srv.Close()
@@ -321,7 +321,7 @@ func TestSendDoesNotFollowRedirectsByDefault(t *testing.T) {
 
 // TLS verification must be on unless the caller opts out.
 func TestSendVerifiesTLSByDefault(t *testing.T) {
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -342,7 +342,7 @@ func TestSendVerifiesTLSByDefault(t *testing.T) {
 func TestWithoutHeaderSuppressesDefault(t *testing.T) {
 	var got string
 	var seen bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got, seen = r.Header.Get("User-Agent"), true
 	}))
 	defer srv.Close()
@@ -365,7 +365,7 @@ func TestWithoutHeaderSuppressesDefault(t *testing.T) {
 // suppress the default.
 func TestWithoutHeaderRemovesAnAlreadySetHeader(t *testing.T) {
 	var ok bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		ok = r.Header.Get("X-Token") != ""
 	}))
 	defer srv.Close()
@@ -388,7 +388,7 @@ func TestWithoutHeaderRemovesAnAlreadySetHeader(t *testing.T) {
 func TestWithHeaderCancelsAnEarlierUnset(t *testing.T) {
 	var got string
 	var seen bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got, seen = r.Header.Get("X-Token"), true
 	}))
 	defer srv.Close()
@@ -433,7 +433,7 @@ func TestMergeQueryValuesOverridesSameKeyAndKeepsOthers(t *testing.T) {
 }
 
 func TestSendRecordsTiming(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		time.Sleep(10 * time.Millisecond)
 	}))
 	defer srv.Close()

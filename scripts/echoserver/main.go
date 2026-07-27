@@ -123,7 +123,7 @@ func echo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-func serveJSON(w http.ResponseWriter, r *http.Request) {
+func serveJSON(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"name":    "Mohamad",
 		"age":     22,
@@ -138,7 +138,7 @@ func serveJSON(w http.ResponseWriter, r *http.Request) {
 // it can carry the things a decode/re-encode round trip destroys: an integer
 // too large for float64, deliberately unsorted keys, a newline inside a string
 // value, and a duplicate key.
-func serveFidelity(w http.ResponseWriter, r *http.Request) {
+func serveFidelity(w http.ResponseWriter, _ *http.Request) {
 	const body = `{"zebra":1,"id":1234567890123456789,"apple":2,` +
 		`"note":"line1\nline2","dup":1,"dup":2}`
 
@@ -149,7 +149,7 @@ func serveFidelity(w http.ResponseWriter, r *http.Request) {
 
 // serveBinary returns a PNG header followed by NUL bytes: printing it raw
 // leaves a terminal in a broken state.
-func serveBinary(w http.ResponseWriter, r *http.Request) {
+func serveBinary(w http.ResponseWriter, _ *http.Request) {
 	body := append([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, make([]byte, 2048)...)
 
 	w.Header().Set("Content-Type", "image/png")
@@ -157,34 +157,34 @@ func serveBinary(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-func serveXML(w http.ResponseWriter, r *http.Request) {
+func serveXML(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/xml")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`<?xml version="1.0"?><catalog><book id="1">highlighted</book></catalog>`))
 }
 
-func serveYAML(w http.ResponseWriter, r *http.Request) {
+func serveYAML(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/yaml")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("name: Mohamad\ntags:\n  - a\n  - b\nhighlighted: true\n"))
 }
 
-func serveHTML(w http.ResponseWriter, r *http.Request) {
+func serveHTML(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, "<!doctype html>\n<html>\n<head><title>fixture</title></head>\n"+
+	_, _ = fmt.Fprint(w, "<!doctype html>\n<html>\n<head><title>fixture</title></head>\n"+
 		"<body><h1>Hello</h1><p class=\"x\">world</p></body>\n</html>\n")
 }
 
-func serveText(w http.ResponseWriter, r *http.Request) {
+func serveText(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprintln(w, "plain text response")
+	_, _ = fmt.Fprintln(w, "plain text response")
 }
 
 // compressed returns a handler that encodes its payload with the given scheme.
 func compressed(encoding string) http.HandlerFunc {
 	payload := []byte(`{"encoding":"` + encoding + `","message":"decoded correctly"}`)
 
-	return func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Encoding", encoding)
 
@@ -203,7 +203,12 @@ func compressed(encoding string) http.HandlerFunc {
 			http.Error(w, "unsupported encoding", http.StatusInternalServerError)
 			return
 		}
-		defer zw.Close()
+		// Close flushes the compressor: a failure here truncates the payload.
+		defer func() {
+			if err := zw.Close(); err != nil {
+				log.Printf("closing %s writer: %v", encoding, err)
+			}
+		}()
 
 		if _, err := zw.Write(payload); err != nil {
 			log.Printf("writing %s payload: %v", encoding, err)
@@ -215,7 +220,7 @@ func redirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/moved", http.StatusFound)
 }
 
-func moved(w http.ResponseWriter, r *http.Request) {
+func moved(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"followed": "yes"})
 }
 
@@ -240,7 +245,7 @@ func status(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	fmt.Fprintf(w, `{"status":%d}`, code)
+	_, _ = fmt.Fprintf(w, `{"status":%d}`, code)
 }
 
 func basicAuth(w http.ResponseWriter, r *http.Request) {

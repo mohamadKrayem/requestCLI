@@ -128,7 +128,7 @@ func TestKeyOrderIsPreserved(t *testing.T) {
 	if zebra < 0 || apple < 0 || mango < 0 {
 		t.Fatalf("output is missing keys: %q", got)
 	}
-	if !(zebra < apple && apple < mango) {
+	if zebra >= apple || apple >= mango {
 		t.Errorf("keys were reordered; got %q", got)
 	}
 }

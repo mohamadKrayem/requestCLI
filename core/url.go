@@ -9,12 +9,12 @@ import (
 	"strings"
 )
 
-// GenerateUrl builds the request URL, applying a default scheme and query params.
+// GenerateURL builds the request URL, applying a default scheme and query params.
 //
 // Scheme-less URLs default to https, except loopback hosts (localhost,
 // 127.0.0.1, [::1]) which default to http so local development keeps working.
 // forceHTTP overrides both.
-func GenerateUrl(reqURL string, forceHTTP bool, queryParams map[string]string) (string, error) {
+func GenerateURL(reqURL string, forceHTTP bool, queryParams map[string]string) (string, error) {
 	reqURL = strings.TrimSpace(reqURL)
 	if reqURL == "" {
 		return "", errors.New("no URL given")
@@ -101,7 +101,7 @@ func (req *BaseRequest) AddQueryString(queryParams map[string]any) error {
 }
 
 // MergeQueryValues layers query parameters onto the request URL, on top of
-// whatever GenerateUrl already applied from -q.
+// whatever GenerateURL already applied from -q.
 //
 // For each key present in values, any existing values for that key are
 // replaced with values[key] (in order); keys absent from values are left

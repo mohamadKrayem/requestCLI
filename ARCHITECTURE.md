@@ -157,7 +157,7 @@ instead, in less code.
 2026-07-25 — Delete `removeNewLines` — it stripped `\n` out of string *values*,
 corrupting description and markdown fields. It was meant to normalize multi-line
 stdin, but `scanRequest` already joins those lines, so it was redundant as well
-as destructive. `formats.NewJson` now validates with `json.Compact`.
+as destructive. `formats.NewJSON` now validates with `json.Compact`.
 
 2026-07-25 — Resolve colour once at the boundary and pass it down as a bool —
 each renderer used to decide for itself, so JSON honoured the terminal check and
@@ -181,7 +181,7 @@ stable.
 
 2026-07-25 — A key@file item implies multipart; combining it with -f is an error — inferring the encoding matches HTTPie and the alternative silently drops the file.
 
-2026-07-25 — Capture the sent request as core.SentRequest on Result and render it from render.RenderRequest — -v is a display concern, and printing from inside Send would make the request invisible to every other front-end.
+2026-07-25 — Capture the sent request as core.SentRequest on Result and render it from render.Request — -v is a display concern, and printing from inside Send would make the request invisible to every other front-end.
 
 2026-07-25 — Adopt HTTPie's 3/4/5 exit codes for --check-status and add 2 for transport failure — a script today cannot tell "server said 404" from "could not reach the server", which is the whole reason --check-status exists.
 

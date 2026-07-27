@@ -36,7 +36,7 @@ type Options struct {
 	BodyJS    string
 	Headers   bool
 	HeadersJS map[string]string
-	Headersjs formats.Json
+	Headersjs formats.JSON
 
 	// IgnoreStdin suppresses the implicit read of a piped body. It is the
 	// escape hatch for a shell that leaves an open pipe on stdin.
@@ -108,7 +108,7 @@ func Run(method string, args []string, opts *Options) error {
 		return err
 	}
 
-	request, err := buildRequest(method, args[0], items, opts)
+	request, err := buildRequest(method, args[0], opts)
 	if err != nil {
 		return err
 	}
@@ -150,8 +150,8 @@ func Run(method string, args []string, opts *Options) error {
 // buildRequest assembles the request up to (but not including) the items and
 // the body: the URL, cookies, basic auth and the flag-sourced headers
 // (-n/--Nheaders, --headers).
-func buildRequest(method, rawURL string, items reqitem.Items, opts *Options) (*core.BaseRequest, error) {
-	url, err := core.GenerateUrl(rawURL, opts.HTTP, opts.QueryParams)
+func buildRequest(method, rawURL string, opts *Options) (*core.BaseRequest, error) {
+	url, err := core.GenerateURL(rawURL, opts.HTTP, opts.QueryParams)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +213,7 @@ func applyItems(request *core.BaseRequest, items reqitem.Items, opts *Options) e
 		}
 	}
 
-	// Query: -q was already applied by GenerateUrl in buildRequest. An item
+	// Query: -q was already applied by GenerateURL in buildRequest. An item
 	// overrides -q for the same key; repeated items for one key all survive.
 	return request.MergeQueryValues(items.QueryValues())
 }
@@ -407,7 +407,7 @@ func PrepareInput(opts *Options, items reqitem.Items) error {
 		if err != nil {
 			return fmt.Errorf("reading --headers: %w", err)
 		}
-		headers, err := formats.NewJson(raw)
+		headers, err := formats.NewJSON(raw)
 		if err != nil {
 			return fmt.Errorf("reading --headers: %w", err)
 		}

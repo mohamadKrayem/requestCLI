@@ -114,7 +114,7 @@ func (req *BaseRequest) WithoutHeader(key string) *BaseRequest {
 }
 
 // WithHeaders merges the key/values of a JSON document into the request headers.
-func (req *BaseRequest) WithHeaders(jsonData formats.Json) error {
+func (req *BaseRequest) WithHeaders(jsonData formats.JSON) error {
 	jsonMap, err := jsonData.ToMap()
 	if err != nil {
 		return fmt.Errorf("reading headers: %w", err)
@@ -157,7 +157,7 @@ func (req *BaseRequest) Send(opts SendOptions) (*Result, error) {
 
 	client := &http.Client{
 		Timeout: timeout,
-		CheckRedirect: func(r *http.Request, via []*http.Request) error {
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			if opts.Redirect {
 				return nil
 			}
@@ -198,7 +198,7 @@ func (req *BaseRequest) Send(opts SendOptions) (*Result, error) {
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
-	reqHttp, err := http.NewRequest(req.Method, req.URL, bodyReader)
+	reqHTTP, err := http.NewRequest(req.Method, req.URL, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("building %s request for %s: %w", req.Method, req.URL, err)
 	}
@@ -210,23 +210,23 @@ func (req *BaseRequest) Send(opts SendOptions) (*Result, error) {
 		if req.Unset[http.CanonicalHeaderKey(key)] {
 			continue
 		}
-		reqHttp.Header.Set(key, fmt.Sprintf("%v", value))
+		reqHTTP.Header.Set(key, fmt.Sprintf("%v", value))
 	}
 	// net/http is alone in filling in its own default (Go-http-client/x.y)
-	// when User-Agent is entirely absent from reqHttp.Header, so skipping the
+	// when User-Agent is entirely absent from reqHTTP.Header, so skipping the
 	// copy above suppresses every other unset header but not this one.
 	// Explicitly setting it to "" makes net/http both skip its default and
 	// omit the header from the wire, rather than sending it empty.
 	if req.Unset["User-Agent"] {
-		reqHttp.Header.Set("User-Agent", "")
+		reqHTTP.Header.Set("User-Agent", "")
 	}
 
 	if req.BasicAuth.Username != "" {
-		reqHttp.SetBasicAuth(req.BasicAuth.Username, req.BasicAuth.Password)
+		reqHTTP.SetBasicAuth(req.BasicAuth.Username, req.BasicAuth.Password)
 	}
 
 	for key, value := range req.Cookies {
-		reqHttp.AddCookie(&http.Cookie{Name: key, Value: value})
+		reqHTTP.AddCookie(&http.Cookie{Name: key, Value: value})
 	}
 
 	// Captured after auth and cookies are applied, so the header set here is
@@ -234,18 +234,18 @@ func (req *BaseRequest) Send(opts SendOptions) (*Result, error) {
 	// and "copy as curl" are all rendering concerns, not transport ones.
 	sentRequest := &SentRequest{
 		Method:  req.Method,
-		URL:     reqHttp.URL.String(),
-		Proto:   reqHttp.Proto,
-		Headers: reqHttp.Header.Clone(),
+		URL:     reqHTTP.URL.String(),
+		Proto:   reqHTTP.Proto,
+		Headers: reqHTTP.Header.Clone(),
 		Body:    bodyBytes,
 	}
 
 	start := time.Now()
-	resp, err := client.Do(reqHttp)
+	resp, err := client.Do(reqHTTP)
 	if err != nil {
 		return nil, &TransportError{Err: fmt.Errorf("sending %s %s: %w", req.Method, req.URL, err)}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	result, err := NewResult(resp)
 	if err != nil {
