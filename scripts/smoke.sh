@@ -188,7 +188,10 @@ check "no URL"            "requires at least 1 arg(s)"    "$BIN" get
 # so it is rejected by the item grammar instead.
 check "stray second URL"  "not a request item: \"b.com\"" "$BIN" get a.com b.com
 check "unknown command"   "unknown command"              "$BIN" fetch example.com
-check "connection refused" "connection refused"          "$BIN" get 127.0.0.1:1 --http
+# Some environments (WSL2, hardened firewalls) drop the SYN instead of refusing it,
+# so the error text is not portable; assert only that the transport failure is
+# reported with the request context. --timeout keeps a dropped SYN from costing 30s.
+check "transport failure" "sending GET http://127.0.0.1:1" "$BIN" get 127.0.0.1:1 --http --timeout 2s
 check "malformed url"     "no host"                      "$BIN" get "://nope"
 check "malformed json"    "parsing json"                 "$BIN" post "$HTTP/" --multi -b '{bad'
 
@@ -282,7 +285,7 @@ if [[ $? -eq 0 ]]; then
 else
   printf '  \033[31mFAIL\033[0m success exits 0\n'; FAIL=$((FAIL + 1))
 fi
-"$BIN" get 127.0.0.1:1 --http >/dev/null 2>&1
+"$BIN" get 127.0.0.1:1 --http --timeout 2s >/dev/null 2>&1
 if [[ $? -ne 0 ]]; then
   printf '  \033[32mPASS\033[0m failure exits non-zero\n'; PASS=$((PASS + 1))
 else
@@ -307,7 +310,7 @@ check_exit() {
 check_exit "no --check-status: 4xx still exits 0" 0 "$BIN" get "$HTTP/status/404"
 
 check_exit "--check-status: success exits 0"        0 "$BIN" get "$HTTP/" --check-status
-check_exit "--check-status: transport failure exits 2" 2 "$BIN" get 127.0.0.1:1 --http --check-status
+check_exit "--check-status: transport failure exits 2" 2 "$BIN" get 127.0.0.1:1 --http --timeout 2s --check-status
 check_exit "--check-status: unfollowed 3xx exits 3" 3 "$BIN" get "$HTTP/redirect" --check-status
 check_exit "--check-status: 4xx exits 4"            4 "$BIN" get "$HTTP/status/404" --check-status
 check_exit "--check-status: 5xx exits 5"            5 "$BIN" get "$HTTP/status/500" --check-status
