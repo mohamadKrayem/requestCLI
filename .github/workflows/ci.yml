@@ -53,3 +53,28 @@ jobs:
       - uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # The script builds both targets through compose and then runs real
+      # requests against the containerised fixture server.
+      - name: Container smoke test
+        run: VERSION=ci bash scripts/docker-smoke.sh
+
+      # Cross-compilation only; nothing is pushed. Catches an arm64 break
+      # before a release tag does.
+      - name: Cross-build linux/arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: false
+          build-args: |
+            VERSION=ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

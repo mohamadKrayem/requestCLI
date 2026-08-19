@@ -41,6 +41,42 @@ $ docker build -t rq .
 $ docker run --rm rq get example.com -S
 ```
 
+The image is a small Alpine layer holding a statically linked binary, runs as an
+unprivileged user (uid 10001), and ships `ca-certificates` because TLS
+verification is on by default. `rq` is the entrypoint, so arguments go straight
+after the image name.
+
+Two flags matter more than usual in a container:
+
+```shell
+# -i keeps stdin attached, which piped request bodies need.
+$ echo '{"name":"ada"}' | docker run --rm -i rq post example.com
+
+# Reaching a service on the host, not inside the container.
+$ docker run --rm --network host rq get 127.0.0.1:8080/health --http
+```
+
+`make docker-build` tags the image with `git describe`, and stamps that version
+into the binary so `rq --version` and the `User-Agent` header report it:
+
+```shell
+$ make docker-build              # rq:<version> and rq:latest
+$ make docker-run ARGS="get example.com -S"
+```
+
+For local development, `docker-compose.yml` runs the fixture server used by the
+test suite (see [TESTING.md](TESTING.md)) so you can try requests without
+hitting a real API:
+
+```shell
+$ make docker-up                                       # fixture on :8080/:8443
+$ docker compose run --rm rq get echoserver:8080/json --http -B
+$ make docker-down
+```
+
+`make docker-smoke` runs an end-to-end check of the image itself — non-root
+user, trust store, stdin, and real requests against that fixture.
+
 ## Usage
 
 The primary way to describe a request is with a URL followed by **request

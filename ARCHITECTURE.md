@@ -190,3 +190,26 @@ stable.
 2026-07-25 — Rename the binary to rq and ship requestCLI as a symlink with an argv[0] deprecation notice for one release — a second main package would duplicate the entry point for no gain.
 
 2026-07-25 — Keep the module path github.com/mohamadkrayem/requestCLI — renaming it is a breaking import-path change with no user-visible benefit in M1.
+
+2026-08-19 — Add a .dockerignore rather than leaving `COPY . .` unfiltered — the
+build context carried `.git`, the host-built `rq` binary and the gitignored
+local notes (`VISION.md`, `M1-BRIEF.md`), which invalidated the layer cache on
+every local build and put local-only files inside an image layer.
+
+2026-08-19 — Make `core.Version` a var so release and container builds can stamp
+it with `-ldflags -X` — a const meant every image reported the source default
+regardless of the tag it was built from.
+
+2026-08-19 — Cross-compile in a `$BUILDPLATFORM` stage instead of building under
+emulation — CGO is already off, so multi-arch images cost one extra `go build`
+rather than a qemu-emulated toolchain.
+
+2026-08-19 — Ship the fixture echoserver as a second image target and a compose
+service — the smoke suite already depends on it, and a container image needs an
+end-to-end check that does not reach a real API.
+
+2026-08-19 — Keep `scripts/smoke.sh` on a locally built binary and give the image
+its own smaller `scripts/docker-smoke.sh` — the full suite needs local files for
+upload items and a closed local port for the transport-failure checks, neither
+of which survives containerisation cleanly; the image check covers only what can
+break in the image (non-root user, trust store, stdin, argv[0] alias).

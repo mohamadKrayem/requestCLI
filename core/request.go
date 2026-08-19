@@ -20,8 +20,10 @@ import (
 	"github.com/mohamadkrayem/requestCLI/formats"
 )
 
-// Version is reported in the default User-Agent header.
-const Version = "0.3.0"
+// Version is reported in the default User-Agent header and by `rq --version`.
+// It is a var, not a const, so release and container builds can stamp the real
+// version in with -ldflags "-X github.com/mohamadkrayem/requestCLI/core.Version=...".
+var Version = "0.3.0"
 
 // DefaultTimeout bounds a whole request/response cycle when none is given.
 const DefaultTimeout = 30 * time.Second

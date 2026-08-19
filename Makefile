@@ -2,7 +2,13 @@ BINARY := rq
 LEGACY := requestCLI
 PKG    := ./...
 
-.PHONY: all build test smoke server cover vet fmt lint tidy clean install
+# Stamped into core.Version at link time. Falls back to the source default when
+# the tree has no tags.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+IMAGE   ?= rq
+
+.PHONY: all build test smoke server cover vet fmt lint tidy clean install \
+        docker-build docker-run docker-smoke docker-up docker-down
 
 all: fmt vet test build
 
@@ -46,3 +52,26 @@ tidy:
 
 clean:
 	rm -f $(BINARY) $(LEGACY) coverage.out
+
+# --- Docker ---------------------------------------------------------------
+# The image is self-contained; none of these targets need a local Go toolchain.
+
+docker-build:
+	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
+
+# Usage: make docker-run ARGS="get example.com -S"
+docker-run: docker-build
+	docker run --rm -i $(IMAGE):latest $(ARGS)
+
+# End-to-end check of the image itself: non-root user, CA trust store, stdin,
+# and real requests against the containerised fixture server. `make smoke` stays
+# the exhaustive suite and runs against a locally built binary.
+docker-smoke:
+	VERSION=$(VERSION) bash scripts/docker-smoke.sh
+
+# Fixture server for manual testing, in a container instead of `make server`.
+docker-up:
+	docker compose up -d --build echoserver
+
+docker-down:
+	docker compose down -v

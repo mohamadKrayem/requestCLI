@@ -1,0 +1,41 @@
+# Local development stack. There is no application server here — rq is a CLI —
+# so the only long-running service is the fixture server the smoke suite and
+# manual testing already use (see TESTING.md).
+#
+#   docker compose up -d echoserver
+#   docker compose run --rm rq get echoserver:8080/json --http -B
+#   docker compose down
+
+services:
+  echoserver:
+    build:
+      context: .
+      target: echoserver
+    # Bound to loopback on purpose: this serves arbitrary echoed input and has
+    # no business being reachable from the network.
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8443:8443"
+    healthcheck:
+      # busybox wget, already in the alpine base. Gates the rq service below so
+      # `compose run` never races the listener coming up.
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+      start_period: 2s
+    restart: unless-stopped
+
+  rq:
+    build:
+      context: .
+      target: rq
+      args:
+        VERSION: ${VERSION:-dev}
+    # One-shot: `compose up` should not try to run a CLI as a service.
+    profiles: ["cli"]
+    depends_on:
+      echoserver:
+        condition: service_healthy
+    # Keeps piped stdin bodies working under `compose run`.
+    stdin_open: true
