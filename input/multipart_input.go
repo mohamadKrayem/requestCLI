@@ -18,6 +18,8 @@ import (
 // rather than a literal field value.
 const FilePrefix = "@!"
 
+// MultipartInput is a multipart/form-data body under construction: the parts
+// written so far, plus the writer whose boundary the Content-Type must carry.
 type MultipartInput struct {
 	Files  map[string]string
 	Body   *bytes.Buffer
@@ -31,6 +33,8 @@ type Field struct {
 	Path  string // set instead of Value to attach a file
 }
 
+// NewMultipartInput returns an empty MultipartInput, ready to be populated by
+// one of the NewMultipartInputFrom* constructors.
 func NewMultipartInput() MultipartInput {
 	return MultipartInput{}
 }
@@ -141,7 +145,7 @@ func (m *MultipartInput) attachFile(field, location string) error {
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", location, err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	fileField, err := m.Writer.CreateFormFile(field, filepath.Base(location))
 	if err != nil {

@@ -50,7 +50,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v6
+      # v8 installs golangci-lint v2.x, which the v2-format .golangci.yml
+      # requires and which is built with a Go new enough for this module.
+      - uses: golangci/golangci-lint-action@v8
         with:
           version: latest
 

@@ -11,7 +11,7 @@ import (
 	"github.com/mohamadkrayem/requestCLI/core"
 )
 
-// RenderRequest renders the request that was sent. Exported so a front-end can
+// Request renders the request that was sent. Exported so a front-end can
 // show a request without a response (--offline, "copy as curl").
 //
 // The request line is "Method RequestURI Proto". Host is emitted first,
@@ -19,7 +19,7 @@ import (
 // response renderer's stability rule. The body goes through the same
 // media-type pipeline as a response body, keyed off the request's own
 // Content-Type.
-func RenderRequest(r *core.SentRequest, opts Options) string {
+func Request(r *core.SentRequest, opts Options) string {
 	if r == nil {
 		return ""
 	}

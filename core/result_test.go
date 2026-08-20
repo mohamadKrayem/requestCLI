@@ -25,7 +25,7 @@ func fetch(t *testing.T, handler http.HandlerFunc) *Result {
 }
 
 func TestResultCarriesStructuredData(t *testing.T) {
-	result := fetch(t, func(w http.ResponseWriter, r *http.Request) {
+	result := fetch(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Marker", "here")
 		w.Write([]byte("payload"))
@@ -117,7 +117,7 @@ func TestDecodesCompressedBodies(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			body := tt.compress(t, payload)
-			result := fetch(t, func(w http.ResponseWriter, r *http.Request) {
+			result := fetch(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/plain")
 				w.Header().Set("Content-Encoding", tt.encoding)
 				w.Write(body)
@@ -131,7 +131,7 @@ func TestDecodesCompressedBodies(t *testing.T) {
 }
 
 func TestEmptyBodyIsEmpty(t *testing.T) {
-	result := fetch(t, func(w http.ResponseWriter, r *http.Request) {
+	result := fetch(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
@@ -141,7 +141,7 @@ func TestEmptyBodyIsEmpty(t *testing.T) {
 }
 
 func TestRepeatedHeadersAreKept(t *testing.T) {
-	result := fetch(t, func(w http.ResponseWriter, r *http.Request) {
+	result := fetch(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Add("X-Multi", "one")
 		w.Header().Add("X-Multi", "two")
 		w.WriteHeader(http.StatusOK)

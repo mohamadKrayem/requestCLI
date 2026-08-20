@@ -27,7 +27,7 @@ that string to see what a given test is protecting against.
 Run a single package or test:
 
 ```shell
-$ go test ./core/ -run TestGenerateUrl -v
+$ go test ./core/ -run TestGenerateURL -v
 $ go test ./command/ -run TestScanRequest -v
 $ go test ./reqitem/ -run TestParse -v
 ```

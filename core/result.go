@@ -83,7 +83,7 @@ func readResponseBody(res *http.Response) ([]byte, error) {
 		return nil, err
 	}
 	if closer, ok := reader.(io.Closer); ok && reader != res.Body {
-		defer closer.Close()
+		defer func() { _ = closer.Close() }()
 	}
 
 	body, err := io.ReadAll(reader)

@@ -13,15 +13,15 @@ import (
 	"strings"
 )
 
-// Json holds a JSON document as a string.
-type Json string
+// JSON holds a JSON document as a string.
+type JSON string
 
-// NewJson validates a JSON document and compacts it onto a single line.
+// NewJSON validates a JSON document and compacts it onto a single line.
 //
 // It uses json.Compact rather than decoding and re-encoding, so number literals
 // and key order are preserved exactly as typed. A large integer written by hand
 // reaches the server unchanged instead of being rounded through float64.
-func NewJson(jsonInput string) (Json, error) {
+func NewJSON(jsonInput string) (JSON, error) {
 	trimmed := strings.TrimSpace(jsonInput)
 	if trimmed == "" {
 		return "", errors.New("empty json input")
@@ -31,20 +31,20 @@ func NewJson(jsonInput string) (Json, error) {
 	if err := json.Compact(&buf, []byte(trimmed)); err != nil {
 		return "", fmt.Errorf("parsing json: %w", err)
 	}
-	return Json(buf.String()), nil
+	return JSON(buf.String()), nil
 }
 
-// ToJSON marshals a string map into a Json value.
-func ToJSON(jsonAsMap map[string]string) (Json, error) {
+// ToJSON marshals a string map into a JSON value.
+func ToJSON(jsonAsMap map[string]string) (JSON, error) {
 	jsonString, err := json.Marshal(jsonAsMap)
 	if err != nil {
 		return "", fmt.Errorf("encoding map as json: %w", err)
 	}
-	return NewJson(string(jsonString))
+	return NewJSON(string(jsonString))
 }
 
 // ToMap decodes the document into a map.
-func (js *Json) ToMap() (map[string]any, error) {
+func (js *JSON) ToMap() (map[string]any, error) {
 	return ToMapOptionalJS(string(*js))
 }
 

@@ -189,7 +189,7 @@ func TestNewMultipartInputFromFieldsPreservesOrder(t *testing.T) {
 	if zIdx == -1 || aIdx == -1 || letterIdx == -1 {
 		t.Fatalf("one or more fields missing from body: %s", body)
 	}
-	if !(zIdx < aIdx && aIdx < letterIdx) {
+	if zIdx >= aIdx || aIdx >= letterIdx {
 		t.Errorf("parts out of order: z@%d a@%d letter@%d, want z < a < letter", zIdx, aIdx, letterIdx)
 	}
 

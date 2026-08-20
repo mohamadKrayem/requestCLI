@@ -75,7 +75,7 @@ func Render(r *core.Result, opts Options) string {
 	if opts.ShowRequest && r.Request != nil {
 		// The request block and the response block are always separated by
 		// exactly one blank line, on stdout, so `rq -v ... | less` shows both.
-		out.WriteString(strings.TrimRight(RenderRequest(r.Request, opts), "\n"))
+		out.WriteString(strings.TrimRight(Request(r.Request, opts), "\n"))
 		out.WriteString("\n\n")
 		out.WriteString(strings.TrimLeft(response.String(), "\n"))
 	} else {
@@ -118,7 +118,7 @@ func renderBody(r *core.Result, opts Options) string {
 }
 
 // renderBodyBytes formats a body according to its media type. It is shared by
-// the response renderer and RenderRequest, so a request body goes through
+// the response renderer and Request, so a request body goes through
 // exactly the same pipeline as a response one: JSON is pretty-printed from raw
 // bytes, a binary payload is described instead of dumped, and everything else
 // with a known content type is syntax-highlighted.

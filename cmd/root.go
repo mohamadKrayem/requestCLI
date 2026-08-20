@@ -43,7 +43,7 @@ which default to http. Use --http to force plain HTTP.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
 
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRun: func(_ *cobra.Command, _ []string) {
 		if legacyRedirect {
 			opts.Redirect = true
 		}
@@ -94,12 +94,12 @@ func newMethodCmd(use, method, short string, aliases []string) *cobra.Command {
 		Aliases: aliases,
 		Short:   short,
 		Args:    cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			return command.Run(method, args, opts)
 		},
 		// The positional arguments are a URL and request items, never files:
 		// completion must not offer filenames for either.
-		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		ValidArgsFunction: func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 	}
@@ -135,7 +135,7 @@ func init() {
 	flags.BoolVar(&opts.CheckStatus, "check-status", false, "Exit with HTTPie's 3/4/5 status codes on a 3xx/4xx/5xx response.")
 	flags.BoolVar(&opts.IgnoreStdin, "ignore-stdin", false, "Never read a request body from piped stdin.")
 
-	_ = rootCmd.RegisterFlagCompletionFunc("style", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	_ = rootCmd.RegisterFlagCompletionFunc("style", func(_ *cobra.Command, _ []string, _ string) ([]string, cobra.ShellCompDirective) {
 		return render.StyleNames(), cobra.ShellCompDirectiveNoFileComp
 	})
 

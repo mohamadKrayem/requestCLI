@@ -276,7 +276,7 @@ func TestRunHeaderItemOverridesNheaders(t *testing.T) {
 func TestRunHeaderUnsetItemRemovesFlagHeaderAndDefault(t *testing.T) {
 	var gotUA string
 	var seen bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		gotUA, seen = r.Header.Get("User-Agent"), true
 	}))
 	t.Cleanup(srv.Close)
@@ -422,7 +422,7 @@ func TestRunRejectsBodyItemsCombinedWithDashDashBody(t *testing.T) {
 func TestRunBodyItemsDefaultToJSON(t *testing.T) {
 	var got captured
 	var contentType string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		contentType = r.Header.Get("Content-Type")
 		b, _ := io.ReadAll(r.Body)
 		got.body = string(b)
@@ -445,7 +445,7 @@ func TestRunBodyItemsDefaultToJSON(t *testing.T) {
 func TestRunBodyItemsWithFormFlagEncodeAsForm(t *testing.T) {
 	var got captured
 	var contentType string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		contentType = r.Header.Get("Content-Type")
 		b, _ := io.ReadAll(r.Body)
 		got.body = string(b)
@@ -475,7 +475,7 @@ func TestRunBodyItemsWithMultiFlagEncodeAsMultipart(t *testing.T) {
 
 	var contentType string
 	var form *multipart.Form
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		contentType = r.Header.Get("Content-Type")
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
 			t.Errorf("server: ParseMultipartForm: %v", err)
@@ -509,7 +509,7 @@ func TestRunFileUploadImpliesMultipartWithoutAnyFlag(t *testing.T) {
 	}
 
 	var contentType string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		contentType = r.Header.Get("Content-Type")
 	}))
 	t.Cleanup(srv.Close)
