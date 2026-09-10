@@ -1,6 +1,14 @@
-# Request-CLI
+# rq
 
-Request-CLI, inspired by tools like httpie and curl, is designed to be beginner-friendly with strong JSON operations, making it easy to execute various HTTP requests. The app offers advanced features such as handling cookies, basic authentication, and the ability to format and colorize outputs.
+`rq`, inspired by tools like HTTPie and curl, is designed to be beginner-friendly
+with strong JSON operations, making it easy to execute various HTTP requests.
+The app offers advanced features such as request items, piped stdin bodies,
+handling cookies, basic authentication, multipart file uploads, and formatted,
+colorized output.
+
+> **Renamed from `requestCLI`.** The binary is now `rq`. A `requestCLI` symlink
+> ships alongside it for one release; running it prints a deprecation notice on
+> stderr and otherwise behaves identically. Scripts should move to `rq`.
 
 ## Installation
 
@@ -10,135 +18,415 @@ Make sure to have Go installed on your system. You can download it from [https:/
 $ go version
 ```
 
-To install Request-CLI, execute the following command:
+To install `rq`:
 
 ```shell
-$ go install github.com/mohamadkrayem/requestCLI
+$ go install github.com/mohamadkrayem/requestCLI@latest
 ```
 
-(Docker container image will be available soon)
-
-# Usage
-
-Hello World:
+Or build from a checkout:
 
 ```shell
-$ requestCLI get helloworld.com
+$ git clone https://github.com/mohamadkrayem/requestCLI.git
+$ cd requestCLI
+$ make build
 ```
 
-For more information, use the following command:
+`make build` produces `rq` and a `requestCLI` symlink beside it.
+
+### Docker
 
 ```shell
-$ requestCLI --help.
+$ docker build -t rq .
+$ docker run --rm rq get example.com -S
+```
+
+The image is a small Alpine layer holding a statically linked binary, runs as an
+unprivileged user (uid 10001), and ships `ca-certificates` because TLS
+verification is on by default. `rq` is the entrypoint, so arguments go straight
+after the image name.
+
+Two flags matter more than usual in a container:
+
+```shell
+# -i keeps stdin attached, which piped request bodies need.
+$ echo '{"name":"ada"}' | docker run --rm -i rq post example.com
+
+# Reaching a service on the host, not inside the container.
+$ docker run --rm --network host rq get 127.0.0.1:8080/health --http
+```
+
+`make docker-build` tags the image with `git describe`, and stamps that version
+into the binary so `rq --version` and the `User-Agent` header report it:
+
+```shell
+$ make docker-build              # rq:<version> and rq:latest
+$ make docker-run ARGS="get example.com -S"
+```
+
+For local development, `docker-compose.yml` runs the fixture server used by the
+test suite (see [TESTING.md](TESTING.md)) so you can try requests without
+hitting a real API:
+
+```shell
+$ make docker-up                                       # fixture on :8080/:8443
+$ docker compose run --rm rq get echoserver:8080/json --http -B
+$ make docker-down
+```
+
+`make docker-smoke` runs an end-to-end check of the image itself — non-root
+user, trust store, stdin, and real requests against that fixture.
+
+## Usage
+
+The primary way to describe a request is with a URL followed by **request
+items** — HTTPie-style `key:value` / `key=value` positional arguments that
+build headers, query parameters and the body without any JSON quoting:
+
+```shell
+$ rq post example.com/login username=Mohamad password=secret X-Api-Token:abc123
+```
+
+That one line sends a POST with `{"username":"Mohamad","password":"secret"}` as
+a JSON body and an `X-Api-Token: abc123` header — no `-b`, no escaped quotes.
+
+For more information:
+
+```shell
+$ rq --help
+$ rq get --help
+```
+
+### Commands
+
+| Command   | Method  | Aliases  |
+| --------- | ------- | -------- |
+| `get`     | GET     |          |
+| `post`    | POST    |          |
+| `put`     | PUT     |          |
+| `patch`   | PATCH   |          |
+| `del`     | DELETE  | `delete` |
+| `head`    | HEAD    |          |
+| `options` | OPTIONS |          |
+| `trace`   | TRACE   |          |
+| `connect` | CONNECT | `conn`   |
+
+Every command takes a URL, followed by zero or more request items:
+
+```shell
+$ rq <command> URL [REQUEST_ITEM ...]
+```
+
+Request items must come **after** the URL.
+
+### Request items
+
+| Item         | Kind                  | Effect |
+| ------------ | --------------------- | ------ |
+| `key=value`  | Field                 | JSON string field (or form field with `-f`) |
+| `key:=value` | RawField              | Verbatim JSON value — `age:=22` sends the number `22`, not the string `"22"` |
+| `Key:value`  | Header                | Sets a header |
+| `Key:`       | HeaderUnset           | Removes a header, including one `rq` would otherwise send by default |
+| `key==value` | Query                 | Adds a query parameter |
+| `key=@path`  | FileField             | Field value read from a file, sent as text |
+| `key@path`   | FileUpload            | Multipart file attachment |
+
+```shell
+$ rq post example.com name=Mohamad age:=22          # JSON body: {"name":"Mohamad","age":22}
+$ rq get example.com page==2 per_page==10           # ?page=2&per_page=10
+$ rq get example.com X-Api-Token:abc123             # header
+$ rq get example.com User-Agent:                    # unset the default User-Agent
+$ rq post example.com/upload avatar@./me.png        # multipart file upload
+$ rq post example.com bio=@./bio.txt                # field value read from a file
+```
+
+Rules that matter in practice:
+
+- The first separator found in an argument wins, scanned left to right, two-character
+  forms (`==`, `:=`, `=@`) checked before one-character ones. This is what lets
+  `email=a@b.com` work as a plain field (the `=` comes first) while
+  `avatar@./me.png` is a file upload.
+- A key may escape a literal separator character with `\`: `foo\:bar=1` sends a
+  field named `foo:bar`. Values are always taken verbatim — no escaping inside a
+  value, which is what shell quoting is for.
+- Repeated keys: for headers and query, later occurrences all survive in the
+  order given (`tag==one tag==two` sends both). For body fields, the **last**
+  occurrence wins.
+- A request item and `-b`/`--Nbody`/`--body` cannot both supply a body — pick
+  one. Merging a hand-typed JSON body with generated fields would require
+  decoding it, which reorders keys and rounds large integers.
+- On a verb that carries data in the query (`GET`, `DELETE`, `HEAD`, `TRACE`,
+  `OPTIONS`, `CONNECT`), body-style items become query parameters instead,
+  matching the existing behavior of `-b` on `GET`. A file upload on one of
+  these verbs is an error — use `POST`, `PUT` or `PATCH`.
+- A `key@file` item implies multipart automatically. Combining it with `-f` is
+  an error (a file cannot be sent as a url-encoded form).
+
+Everything below — `-n`, `-q`, `-b`, `--headers`, `--body`, `-f`, `--multi` — is
+still fully supported and combines with request items; see
+[Flags](#flags) and [Precedence](#precedence-flags-and-request-items) below.
+
+### Flags
+
+| Flag             | Short | Description                                                  |
+| ---------------- | ----- | -------------------------------------------------------------- |
+| `--Nbody`        | `-b`  | Body as JSON on a single line.                                  |
+| `--body`         |       | Read a multi-line JSON body from stdin, terminated by `;`.      |
+| `--Nheaders`     | `-n`  | Headers as `key=value` pairs.                                   |
+| `--headers`      |       | Read multi-line JSON headers from stdin, terminated by `;`.     |
+| `--query`        | `-q`  | Query parameters as `key=value` pairs.                          |
+| `--cookie`       | `-c`  | Cookies as `key=value` pairs.                                   |
+| `--auth`         | `-a`  | Basic auth, e.g. `username=me,password=secret`.                 |
+| `--form`         | `-f`  | Send a url-encoded form.                                        |
+| `--multi`        |       | Send a multipart form (supports file uploads).                  |
+| `--printB`       | `-B`  | Print the response body.                                         |
+| `--printH`       | `-H`  | Print the response headers.                                     |
+| `--printS`       | `-S`  | Print the response status line.                                  |
+| `--verbose`      | `-v`  | Also print the request that was sent.                            |
+| `--check-status` |       | Exit with HTTPie's 3/4/5 status codes on a 3xx/4xx/5xx response. |
+| `--ignore-stdin` |       | Never read a request body from piped stdin.                      |
+| `--redirect`     |       | Follow redirects.                                                |
+| `--http`         |       | Force plain HTTP instead of HTTPS.                                |
+| `--insecure`     | `-k`  | Skip TLS certificate verification (dangerous).                    |
+| `--timeout`      |       | Overall request timeout (default `30s`).                         |
+| `--style`        |       | Syntax highlighting theme (default `monokai`); tab-completes.     |
+
+The `-B`, `-H` and `-S` flags combine: `-H -B` prints headers and body. Passing
+none of them prints everything. `-v` is independent of that set: `-v` alone
+shows the request plus the full response; `-v -B` shows the request plus the
+response body only.
+
+### Precedence: flags and request items
+
+Headers, query and body can each come from more than one source. The rule is
+always "later/more explicit wins":
+
+- **Headers**: `-n`/`--Nheaders`, then `--headers` (stdin JSON), then request
+  items — items are applied last, so `Key:` can unset a header any earlier
+  source set.
+- **Query**: `-q` is applied first. Then, for each distinct key carried by a
+  `key==value` item, any existing `-q` value for that key is replaced;
+  repeated items for the same key all survive.
+- **Body**: `-b`/`--Nbody`, `--body`, and body-carrying request items are all
+  explicit and mutually exclusive with each other (pick one). Piped stdin is
+  implicit and is only used when none of the explicit sources are present.
+
+### Piped stdin body
+
+If nothing else supplies a body — no `-b`, no `--body`, no `--headers`, no
+`--ignore-stdin`, and no body-carrying request item — and stdin is a pipe
+rather than a terminal, `rq` reads all of stdin (capped at 10 MiB) and sends it
+as the body:
+
+```shell
+$ echo '{"name":"Mohamad"}' | rq post example.com -B
+```
+
+An empty pipe (`< /dev/null`, a closed-stdin CI runner) produces no body and is
+not an error. Pass `--ignore-stdin` if your shell leaves an open pipe on stdin
+that you do not want read as a body.
+
+### `-v` / `--verbose`
+
+`-v` prints the request that was actually sent — method, request line, final
+headers (including defaults, auth and cookies) and body — followed by a blank
+line and then the response, on the same stream:
+
+```shell
+$ rq get localhost:8080/json -v -S
+GET /json HTTP/1.1
+Host:   localhost:8080
+Accept:   */*
+Accept-Encoding:   gzip, deflate, br
+User-Agent:   rq/0.3.0
+
+HTTP/1.1 200 OK
+```
+
+`Authorization` and `Cookie` are shown unmasked.
+
+### Exit codes
+
+| Code | Meaning |
+| ---- | ------- |
+| 0    | Response received. Without `--check-status`, any status counts. With it, status < 300, or a 3xx that was followed with `--redirect`. |
+| 1    | Usage or local error: bad flag, unparseable request item, invalid URL, invalid JSON, unreadable file. |
+| 2    | Transport failure: DNS, connection refused, TLS, timeout. |
+| 3    | `--check-status` and a 3xx that was **not** followed. |
+| 4    | `--check-status` and a 4xx. |
+| 5    | `--check-status` and a 5xx. |
+
+Without `--check-status`, an HTTP error status still exits 0 — the request
+itself succeeded. 3/4/5 are HTTPie's codes verbatim; 2 is new, so a script can
+tell "could not reach the server" apart from "server said 404".
+
+```shell
+$ rq get example.com/missing --check-status; echo $?
+4
+```
+
+### Shell completions
+
+Cobra's built-in `completion` command generates a script for your shell:
+
+```shell
+$ rq completion bash > /etc/bash_completion.d/rq
+$ rq completion zsh  > "${fpath[1]}/_rq"
+$ rq completion fish > ~/.config/fish/completions/rq.fish
+```
+
+Method commands (`get`, `post`, ...) do not offer filenames for their
+positional arguments, since those are always a URL or a request item.
+`--style` tab-completes the available theme names.
+
+### Output
+
+Response bodies are shown exactly as the server sent them. JSON is pretty-printed
+straight from the raw bytes, so large integers keep their precision, keys keep
+their original order, and duplicate keys are not collapsed — the display never
+decodes the payload.
+
+JSON, HTML, XML, YAML, JavaScript, CSS, TOML, SQL, Markdown and GraphQL are
+syntax-highlighted. Pass `--style` to change the theme.
+
+Colour is enabled only when stdout is a terminal, and is disabled entirely if
+`NO_COLOR` is set or `TERM=dumb`, so piped output is always clean:
+
+```shell
+$ rq get example.com -B | grep name   # no escape sequences
+$ NO_COLOR=1 rq get example.com -B
+```
+
+Binary responses are described rather than dumped:
+
+```shell
+$ rq get example.com/logo.png -B
+[binary data: 12.4 kB, image/png — not shown]
+```
+
+### URL scheme
+
+Scheme-less URLs default to **https**, except loopback hosts (`localhost`,
+`127.0.0.1`, `[::1]`) which default to **http** so local development keeps
+working. Pass `--http` to force plain HTTP for any host.
+
+```shell
+$ rq get example.com          # -> https://example.com
+$ rq get localhost:3000       # -> http://localhost:3000
+$ rq get example.com --http   # -> http://example.com
+```
+
+### TLS
+
+Certificate verification is **on** by default. Use `-k` / `--insecure` to talk
+to a server with a self-signed certificate — this removes protection against
+man-in-the-middle attacks, so use it only against hosts you control.
+
+```shell
+$ rq get https://self-signed.local -k
 ```
 
 ## Examples
 
-Custom HTTP method, simple HTTP headers, simple JSON data as the request body
+Request items, the primary way to build a request:
 
 ```shell
-$ requestCLI post example.com -n X-API-Token=123 -b='{"name":"Mohamad"}'
+$ rq post example.com/login username=Mohamad password=secret
+$ rq get example.com q==search per_page==10
+$ rq post example.com X-Api-Token:abc123 name=Mohamad
+$ rq post example.com/upload avatar@./photo.png caption=vacation
 ```
 
-To send multiple simple headers:
+Simple headers and a JSON body, using flags:
 
 ```shell
-$ requestCLI post example.com -n X-API-Token-1=123 -n X-API-Token-2=456
+$ rq post example.com -n X-API-Token=123 -b='{"name":"Mohamad"}'
 ```
 
-Or separate the headers by a comma:
+Multiple simple headers:
 
 ```shell
-$ requestCLI post example.com -n X-API-Token-1=123,X-API-Token-2=456
+$ rq post example.com -n X-API-Token-1=123 -n X-API-Token-2=456
 ```
 
----
-
-Custom HTTP method, complex HTTP headers use the '- -headers' flag, complex JSON data use the '- -body' flag:
+Or separated by a comma:
 
 ```shell
-$ requestCLI put example.com --headers --body
- {
-	 "X-API-Token": 123
- };
- {
-	 "name":"Mohamad",
-	 "arrayOfNbs": [
-		 1,
-		 2,
-		 3
-	 ],
-	 "nestedJS": {
-		 "w":"2"
-	 }
- };
-
+$ rq post example.com -n X-API-Token-1=123,X-API-Token-2=456
 ```
 
 ---
 
-Custom HTTP method, simple HTTP headers, with Cookies:
+Complex headers and body — use `--headers` and `--body`, and terminate each
+block with `;`:
 
 ```shell
-$ requestCLI get example.com -n X-API-Token=123 -c key=value
+$ rq put example.com --headers --body
+{
+	"X-API-Token": 123
+};
+{
+	"name":"Mohamad",
+	"arrayOfNbs": [1, 2, 3],
+	"nestedJS": { "w":"2" }
+};
 ```
+
+Write complete JSON, including the closing brace or bracket. Top-level arrays
+are supported, and blank lines are ignored.
 
 ---
 
-Custom HTTP GET method, with Basic authentication:
+Cookies:
 
 ```shell
-$ requestCLI get example.com --auth username="Mohamad",password="pass123"
+$ rq get example.com -n X-API-Token=123 -c key=value
 ```
 
----
-
-Custom HTTP GET method, Querystring parameters:
+Basic authentication:
 
 ```shell
-$ requestCLI get example.com -q q=queryExample,per_page=1
+$ rq get example.com --auth username=Mohamad,password=pass123
 ```
 
----
+> **Note**: credentials passed this way land in your shell history and are
+> visible in `ps`. Prefer a throwaway credential for anything sensitive.
 
-Custom HTTP method, Output option:
+Query string parameters:
 
 ```shell
-$ requestCLI get example.com -H
+$ rq get example.com -q q=queryExample,per_page=1
 ```
 
-- -H or --printH for headers
-- -B or --printB for body
-- -S or --printS for status
-
----
-
-Delete:
+Output selection:
 
 ```shell
-$ requestCLI delete example.com
+$ rq get example.com -H        # headers only
+$ rq get example.com -H -B     # headers and body
 ```
 
-Post:
+Other methods:
 
 ```shell
-$ requestCLI post "http://example.com" -b='{"name":"Example"}'
-```
-
-Put:
-
-```shell
-$ requestCLI put example.com -b='{"name":"Example"}'
+$ rq del example.com
+$ rq post "http://example.com" -b='{"name":"Example"}'
+$ rq put example.com -b='{"name":"Example"}'
 ```
 
 ---
 
 ## Sending forms and files
 
-Custom http request including form data with files:
+Multipart form with files, via request items:
 
 ```shell
-$ requestCLI post example.com/form --multi --body
+$ rq post example.com/form avatar@~/photo.jpeg name=Mohamad age:=22
+```
+
+Or with `--multi --body`:
+
+```shell
+$ rq post example.com/form --multi --body
 {
 	"@!image":"~/justForTesting/OIG.jpeg",
 	"@!resume":"~/justForTesting/Mohamad_Krayem_2023_CV.docx",
@@ -148,48 +436,65 @@ $ requestCLI post example.com/form --multi --body
 };
 ```
 
-All your files must begin with ' @! ' and the normal data fields without any symbole.
-If your path starts with:
+File fields in `--multi --body` JSON must begin with `@!`; normal data fields
+carry no prefix. Path handling (shared with request-item file paths):
 
-- ' ~ ': the app will automaticaly search in the home directory.
-- ' / ': the app won't do any automatical behavior and it will go directly to the path.
-- string : the app will search in the current working directory.
+- `~` — resolved against your home directory.
+- `/` — used as-is.
+- anything else — resolved against the current working directory.
 
 ---
 
-To send normal form:
+Url-encoded form:
 
 ```shell
-$ requestCLI post example.com -f --body
+$ rq post example.com -f --body
 {
 	"key1":"value",
 	"key2":21
 };
 ```
 
-> **Note**: You can use the -b or the --body flag to include a body in your request.
+> **Note**: use `-b` for a single-line body or `--body` for a multi-line one.
 
 ---
+
+## Development
+
+```shell
+$ make test     # go test -race ./...
+$ make cover    # coverage summary
+$ make vet
+$ make lint     # requires golangci-lint
+$ make build
+```
+
+## Testing
+
+See [TESTING.md](TESTING.md) for the full guide, including manual scenarios.
+
+```shell
+$ make test     # unit and integration tests, no network needed
+$ make smoke    # end-to-end run of the real binary against a local fixture
+$ make server   # start the fixture server for manual testing
+```
 
 ## Technologies Used
 
 - Golang
 - Cobra
-
-## This allowed for efficient CLI development and improved the user experience. I also gained valuable experience in backend development through this project.
+- chroma (syntax highlighting)
+- tidwall/pretty (lossless JSON formatting)
 
 ## Future Features
-
-The app is designed to handle future features such as:
 
 - JWT authentication
 - Digest authentication
 - Proxies
-- SSL certificates
-- The ability to send and download files
+- Client SSL certificates
+- Downloading response bodies to a file
+- Secret masking in `-v` output (`{{secret:}}` namespace)
 
-These features will be added in future updates.
+## License
 
-## Overall, this app is designed to be a versatile and powerful tool for developers of all skill levels, making it easy to work with HTTP requests and handle a variety of common authentication and authorization scenarios.
-
-## Thank You.
+See [LICENSE](LICENSE).

@@ -1,218 +1,61 @@
-package json
+// Package formats validates and normalizes JSON supplied on the command line.
+//
+// It is an input-side package only. Rendering a response never comes through
+// here: decoding a payload in order to display it is what destroyed number
+// precision, key order and duplicate keys. See render/json.go.
+package formats
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
 	"strings"
-
-	"github.com/mattn/go-colorable"
-	"github.com/neilotoole/jsoncolor"
 )
 
-type Json string
+// JSON holds a JSON document as a string.
+type JSON string
 
-func NewJson(jsonInput string) (Json, error) {
-	jsonString, err := removeNewLinesFromJSONString(jsonInput)
-	if err != nil {
-		return Json(""), err
+// NewJSON validates a JSON document and compacts it onto a single line.
+//
+// It uses json.Compact rather than decoding and re-encoding, so number literals
+// and key order are preserved exactly as typed. A large integer written by hand
+// reaches the server unchanged instead of being rounded through float64.
+func NewJSON(jsonInput string) (JSON, error) {
+	trimmed := strings.TrimSpace(jsonInput)
+	if trimmed == "" {
+		return "", errors.New("empty json input")
 	}
 
-	return jsonString, nil
-}
-
-func ToJSONStr(JsonAsMap map[string]string) (string, error) {
-	JsonString, err := json.Marshal(JsonAsMap)
-	if err != nil {
-		log.Fatal("error with your json !!!")
-	}
-	return string(JsonString), nil
-}
-
-func ToJSON(JsonAsMap map[string]string) (Json, error) {
-	JsonString, err := json.Marshal(JsonAsMap)
-	if err != nil {
-		log.Fatal("Error with your json !!!")
-	}
-	var JsonJS Json
-	JsonJS, _ = NewJson(string(JsonString))
-	return JsonJS, nil
-}
-
-func (js *Json) ToMap() (map[string]any, error) {
-	var jsonMap map[string]any
-
-	if err := json.Unmarshal([]byte(*js), &jsonMap); err != nil {
-		fmt.Println(err)
-		return nil, err
-	}
-
-	return jsonMap, nil
-}
-
-func (js *Json) GetColorizedJSON() (string, error) {
 	var buf bytes.Buffer
-	var jsonData []byte = []byte(*js)
-
-	// Create a new encoder that writes to the buffer
-	enc := jsoncolor.NewEncoder(&buf)
-
-	// Check if stdout is a color terminal
-	if jsoncolor.IsColorTerminal(colorable.NewColorableStdout()) {
-		// Set the colors for the encoder
-		clrs := &jsoncolor.Colors{
-			Null:   jsoncolor.Color("\x1b[32m"), // Green
-			Bool:   jsoncolor.Color("\x1b[36m"), // Cyan
-			String: jsoncolor.Color("\x1b[92m"), // Magenta
-			Number: jsoncolor.Color("\x1b[33m"), // Yellow
-			Key:    jsoncolor.Color("\x1b[94m"), // Red
-		}
-		// Apply the colors to the encoder
-		enc.SetColors(clrs)
+	if err := json.Compact(&buf, []byte(trimmed)); err != nil {
+		return "", fmt.Errorf("parsing json: %w", err)
 	}
-
-	if isArray(string(jsonData)) {
-		return encodeArrayOfMaps(jsonData, *enc, &buf)
-	} else {
-		return encodeMaps(jsonData, *enc, &buf)
-	}
-
+	return JSON(buf.String()), nil
 }
 
-func encodeMaps(jsonData []byte, enc jsoncolor.Encoder, buf *bytes.Buffer) (string, error) {
-	var jsonMap map[string]any
-	// Unmarshal the JSON data
-	jsonMap, err := ToMapOptionalJS(string(jsonData))
+// ToJSON marshals a string map into a JSON value.
+func ToJSON(jsonAsMap map[string]string) (JSON, error) {
+	jsonString, err := json.Marshal(jsonAsMap)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("encoding map as json: %w", err)
 	}
-
-	enc.SetIndent("", "  ")
-
-	// Encode the JSON data to the buffer
-	if err := enc.Encode(jsonMap); err != nil {
-		return "", err
-	}
-
-	return buf.String(), nil
+	return NewJSON(string(jsonString))
 }
 
-func encodeArrayOfMaps(jsonData []byte, enc jsoncolor.Encoder, buf *bytes.Buffer) (string, error) {
-
-	var jsonArray []any
-	// Unmarshal the JSON data
-	jsonArray, err := toArrayOfMaps(string(jsonData))
-	if err != nil {
-		return "", err
-	}
-
-	enc.SetIndent("", "  ")
-
-	// Encode the JSON data to the buffer
-	if err := enc.Encode(jsonArray); err != nil {
-		return "", err
-	}
-
-	return buf.String(), nil
+// ToMap decodes the document into a map.
+func (js *JSON) ToMap() (map[string]any, error) {
+	return ToMapOptionalJS(string(*js))
 }
 
+// ToMapOptionalJS decodes a JSON object into a map.
+//
+// This is for values that genuinely have to become Go data — header names,
+// form fields, query parameters — never for display.
 func ToMapOptionalJS(js string) (map[string]any, error) {
 	var jsonMap map[string]any
-
 	if err := json.Unmarshal([]byte(js), &jsonMap); err != nil {
-		log.Fatal("Error in your json format")
-		return nil, err
+		return nil, fmt.Errorf("parsing json object: %w", err)
 	}
-
 	return jsonMap, nil
-}
-
-func toArrayOfMaps(js string) ([]any, error) {
-	var arrayOfMaps []any
-	if err := json.Unmarshal([]byte(js), &arrayOfMaps); err != nil {
-		return nil, err
-	}
-
-	return arrayOfMaps, nil
-}
-
-func isArray(js string) bool {
-	if string(js[0]) == "[" {
-		return true
-	}
-	return false
-}
-
-func removeNewLinesFromJSONString(jsonStr string) (Json, error) {
-	// parse the JSON string into an interface{}
-	if string(jsonStr[0]) == "[" {
-		var jsonArrayOfMaps []any
-		jsonArrayOfMaps, err := toArrayOfMaps(jsonStr)
-		_ = jsonArrayOfMaps
-		if err != nil {
-			return "", err
-		}
-		var modifiedJSONStr []byte
-		// remove newline characters from all string values recursively
-		removeNewLinesRecursively(jsonArrayOfMaps)
-		// encode the modified JSON object back into a string
-		modifiedJSONStr, err = json.Marshal(jsonArrayOfMaps)
-		_ = modifiedJSONStr
-		if err != nil {
-			return "", err
-		}
-		return Json(modifiedJSONStr), nil
-	} else {
-		var jsonMap map[string]any
-		jsonMap, err := ToMapOptionalJS(jsonStr)
-		if err != nil {
-			return "", err
-		}
-
-		var modifiedJSONStr []byte
-
-		// remove newline characters from all string values recursively
-		removeNewLinesRecursively(jsonMap)
-		// encode the modified JSON object back into a string
-		modifiedJSONStr, err = json.Marshal(jsonMap)
-		if err != nil {
-			return "", err
-		}
-
-		//	if err != nil {
-		//	}
-
-		return Json(modifiedJSONStr), nil
-	}
-}
-
-func removeNewLinesRecursively(jsonObj any) {
-	switch val := jsonObj.(type) {
-	case string:
-		// replace all newline characters in string values
-		jsonObj = strings.ReplaceAll(val, "\n", "")
-	case map[string]any:
-		// traverse map values recursively
-		for _, v := range val {
-			removeNewLinesRecursively(v)
-		}
-	case []any:
-		// traverse array values recursively
-		for _, v := range val {
-			removeNewLinesRecursively(v)
-		}
-	}
-}
-
-func IsJson(data string) (bool, error) {
-	var jsonData any
-	err := json.Unmarshal([]byte(data), &jsonData)
-	if err != nil {
-		fmt.Println(err)
-		return false, err
-	} else {
-		return true, nil
-	}
-
 }

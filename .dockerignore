@@ -1,0 +1,36 @@
+# Build context exclusions. Everything here either busts the layer cache on
+# every edit or has no business inside an image.
+
+# Git and CI metadata
+.git
+.gitignore
+.github
+
+# Host build output. The image compiles its own binary; copying one in would
+# invalidate the cache on every local `make build` and risks shipping a stale
+# or wrong-architecture binary if a COPY ever picks it up.
+rq
+requestCLI
+dist/
+
+# Test and coverage artifacts
+*.test
+coverage.out
+coverage.html
+
+# Local-only notes and agent configuration. VISION.md and M1-BRIEF.md are
+# gitignored on purpose; they must not reach an image layer either.
+VISION.md
+M1-BRIEF.md
+.claude/
+.agents/
+skills-lock.json
+
+# Local environment
+.env
+.env.local
+
+# Editor / OS noise
+.idea/
+.vscode/
+.DS_Store
