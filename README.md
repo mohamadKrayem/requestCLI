@@ -238,7 +238,7 @@ GET /json HTTP/1.1
 Host:   localhost:8080
 Accept:   */*
 Accept-Encoding:   gzip, deflate, br
-User-Agent:   rq/0.3.0
+User-Agent:   rq/1.2.0
 
 HTTP/1.1 200 OK
 ```
