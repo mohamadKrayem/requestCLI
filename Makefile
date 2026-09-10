@@ -14,13 +14,13 @@ all: fmt vet test build
 
 # Builds rq and a requestCLI symlink beside it, for one release of backward
 # compatibility. See ARCHITECTURE.md and the argv[0] deprecation notice in
-# main.go.
+# cmd.Execute.
 build:
-	go build -o $(BINARY) .
+	go build -o $(BINARY) ./cmd/rq
 	ln -sf $(BINARY) $(LEGACY)
 
 install:
-	go install .
+	go install ./cmd/rq
 
 test:
 	go test -race $(PKG)

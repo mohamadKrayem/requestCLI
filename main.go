@@ -1,22 +1,15 @@
 /*
 Copyright © 2023 Mohamad Krayem < mohamadkrayem@email.com >
 */
+
+// Command requestCLI is the pre-rename entry point, kept for one release so
+// `go install github.com/mohamadkrayem/requestCLI@latest` keeps working. That
+// installs a binary named requestCLI, which prints a deprecation notice on
+// every run. The canonical entry point is ./cmd/rq.
 package main
 
-import (
-	"fmt"
-	"os"
-	"path/filepath"
-
-	"github.com/mohamadkrayem/requestCLI/cmd"
-)
+import "github.com/mohamadkrayem/requestCLI/cmd"
 
 func main() {
-	// requestCLI is the old binary name, kept working as a symlink for one
-	// release. Warn on stderr, then continue exactly as before.
-	switch filepath.Base(os.Args[0]) {
-	case "requestCLI", "requestCLI.exe":
-		fmt.Fprintln(os.Stderr, "requestCLI is deprecated and will be removed in the next release; use rq")
-	}
 	cmd.Execute()
 }

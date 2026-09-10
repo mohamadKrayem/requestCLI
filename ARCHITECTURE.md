@@ -7,7 +7,7 @@ here is layering, error handling, and safe network defaults.
 ## Layers
 
 ```
-main.go
+cmd/rq/main.go      entry point (main.go at the root: pre-rename entry point, one release)
   └── cmd/          flag definitions and one subcommand per HTTP verb
         └── command/    turns flags + request items into a request, renders the result
               ├── reqitem/  parses HTTPie-style positional request items
@@ -213,3 +213,10 @@ its own smaller `scripts/docker-smoke.sh` — the full suite needs local files f
 upload items and a closed local port for the transport-failure checks, neither
 of which survives containerisation cleanly; the image check covers only what can
 break in the image (non-root user, trust store, stdin, argv[0] alias).
+
+2026-09-10 — Add `cmd/rq` as the canonical entry point and keep the root main
+package for one release — `go install` names a binary after the last element of
+its import path, so installing the module root could only ever produce
+`requestCLI`, which nags on every run and has no `rq` to switch to. This reverses
+the 2026-07-25 entry that rejected a second main package; the argv[0] notice
+moves into `cmd.Execute` so the two entry points share it rather than duplicate it.

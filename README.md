@@ -21,8 +21,16 @@ $ go version
 To install `rq`:
 
 ```shell
-$ go install github.com/mohamadkrayem/requestCLI@latest
+$ go install github.com/mohamadkrayem/requestCLI/cmd/rq@latest
 ```
+
+> Before v1.2.0 the install path was the module root. That path still works for
+> this release, but `go install` names a binary after its import path, so it
+> installs `requestCLI`, which prints a deprecation notice on every run. Switch
+> to the `cmd/rq` path above.
+
+Prebuilt binaries for Linux, macOS and Windows (amd64 and arm64) are attached to
+each [release](https://github.com/mohamadKrayem/requestCLI/releases).
 
 Or build from a checkout:
 

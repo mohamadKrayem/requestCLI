@@ -23,7 +23,7 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
       -trimpath \
       -ldflags="-s -w -X github.com/mohamadkrayem/requestCLI/core.Version=${VERSION}" \
-      -o /out/rq . \
+      -o /out/rq ./cmd/rq \
  && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build \
       -trimpath -ldflags="-s -w" \
       -o /out/echoserver ./scripts/echoserver

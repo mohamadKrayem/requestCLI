@@ -57,7 +57,7 @@ check_not() {
 }
 
 echo "==> Building"
-go build -o "$BIN" "$ROOT" || exit 1
+go build -o "$BIN" "$ROOT/cmd/rq" || exit 1
 ln -sf rq "$LEGACY_BIN"
 
 echo "==> Starting echoserver"
