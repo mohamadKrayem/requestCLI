@@ -254,6 +254,49 @@ HTTP/1.1 200 OK
 
 `Authorization` and `Cookie` are shown unmasked.
 
+### Streaming and server-sent events
+
+A `text/event-stream` response is rendered incrementally, frame by frame, with
+no flag:
+
+```shell
+$ rq get api.example.com/events
+● delta  {"index":0,"text":"chunk 0"}
+● delta  {"index":1,"text":"chunk 1"}
+● delta  {"index":2,"text":"chunk 2"}
+3 events · 84 B · first 340ms · total 2.90s · 1.0 events/s
+```
+
+Events go to **stdout**, the closing summary to **stderr**, so a pipe carries
+events and nothing else.
+
+| Flag | Effect |
+| ---- | ------ |
+| *(none)* | Automatic on `text/event-stream` |
+| `--stream` | Force it for a server that streams under another content type |
+| `--raw` | Print each frame as it arrived, comment lines included |
+| `-v` | Add each event's offset from the start of the request |
+
+`--raw` is for debugging the framing rather than the payload:
+
+```shell
+$ rq get api.example.com/events --raw
+: keepalive
+event: delta
+data: {"index":0,"text":"chunk 0"}
+```
+
+Keepalive comments are framing, not data. They are not rendered and not
+counted, but `--raw` still shows them.
+
+**`--timeout` means something different for a stream.** It bounds connecting
+and the response headers only — not the life of the stream, which would
+otherwise be cut off after 30s by default. A buffered response is still bounded
+end to end.
+
+Press Ctrl-C to stop. Whatever arrived is kept, the summary is still printed,
+and the exit code is 130.
+
 ### Exit codes
 
 | Code | Meaning |

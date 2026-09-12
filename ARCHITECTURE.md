@@ -63,6 +63,14 @@ string concatenation.
 decompressed body as `[]byte`, and timing. The body is never decoded here.
 `core` must not import `render`, `chroma`, or any terminal package.
 
+A `text/event-stream` response — or any response when `SendOptions.Stream` is
+set — comes back with `Result.Stream` populated and `Result.Body` nil. The two
+are never both present: a stream has no complete body to hand over. The caller
+then pulls `core.Event` values from `Stream.Next` until `io.EOF` and must
+`Close` the result, because `Send` can no longer close the body itself.
+`Result.Close` is safe on any result, repeatable, and safe to call
+concurrently — the CLI closes from a signal handler to unblock a parked read.
+
 ### render/
 
 `Render(*core.Result, Options) string` is a pure function: no globals, no TTY
@@ -256,3 +264,38 @@ release. This retires the argv[0] notice in `cmd.Execute`, the root `main`
 package, the symlink in the release archives and the one in the image. The
 module path stays `github.com/mohamadkrayem/requestCLI`: renaming it is a
 breaking import-path change that buys nothing.
+
+2026-09-12 — Model a stream as `Result.Stream` alongside a nil `Body`, rather
+than turning `Body` into an `io.Reader` — every existing caller and both
+renderers consume `[]byte`, and making them all handle a reader in order to
+serve one new response type would push buffering into each of them. A front-end
+checks one field to know which kind of result it has.
+
+2026-09-12 — Bound a streamed request with a cancellable timer instead of
+`http.Client.Timeout` — that field also covers reading the body and cannot be
+lifted once the response turns out to be a stream, so the default 30s would cut
+off every long-lived stream. `--timeout` now bounds connect and headers for a
+stream, and still bounds the whole exchange for a buffered response. The visible
+cost is that a timeout no longer reports Go's "Client.Timeout exceeded"; it
+names the configured timeout instead, which is clearer anyway.
+
+2026-09-12 — Surface keepalive comment frames as events carrying `Comment:
+true`, instead of swallowing them in the parser — `--raw` exists to show
+framing, and a parser that drops comments makes it unable to. Returning them
+immediately also bounds memory, which accumulating them into the next event
+would not.
+
+2026-09-12 — Render a stream through a pure `render.Event` per event rather than
+letting `core` print — it keeps the constraint that `core` never touches a
+terminal, and it is what lets a TUI re-render a scrollback of events on resize.
+`command` owns the loop, the signal handling and the writer.
+
+2026-09-12 — Compact JSON event payloads onto one line instead of
+pretty-printing them — a stream is read as a sequence, and expanding each frame
+over a dozen lines hides the sequence it exists to show. Key order and integer
+precision are still preserved exactly, for the same reason the body renderer
+preserves them.
+
+2026-09-12 — Print events on stdout and the summary on stderr — piping a stream
+into a parser must yield events and nothing else, and the summary is diagnostic
+output about the exchange rather than part of it.

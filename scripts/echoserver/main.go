@@ -49,6 +49,7 @@ func main() {
 	mux.HandleFunc("/redirect", redirect)
 	mux.HandleFunc("/moved", moved)
 	mux.HandleFunc("/slow", slow)
+	mux.HandleFunc("/sse", serveSSE)
 	mux.HandleFunc("/status/", status)
 	mux.HandleFunc("/basic-auth", basicAuth)
 	mux.HandleFunc("/multipart", multipartEcho)
@@ -339,4 +340,66 @@ func selfSignedCert() (tls.Certificate, error) {
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
 
 	return tls.X509KeyPair(certPEM, keyPEM)
+}
+
+// serveSSE streams server-sent events.
+//
+// Query parameters:
+//
+//	events=N     how many events to send (default 3, capped at 100)
+//	delay=Nms    pause between events (default 10ms, capped at 5s)
+//	keepalive=1  send a comment frame before the events, which a client must
+//	             not render as an empty event
+//	noterm=1     omit the blank line after the final event, so a client can be
+//	             checked against a stream that is cut short
+func serveSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	count := 3
+	if n, err := strconv.Atoi(r.URL.Query().Get("events")); err == nil && n >= 0 {
+		count = min(n, 100)
+	}
+
+	delay := 10 * time.Millisecond
+	if d, err := time.ParseDuration(r.URL.Query().Get("delay")); err == nil && d >= 0 {
+		delay = min(d, 5*time.Second)
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+
+	if r.URL.Query().Get("keepalive") == "1" {
+		_, _ = io.WriteString(w, ": keepalive\n\n")
+		flusher.Flush()
+	}
+
+	for i := range count {
+		// A JSON payload, because that is what a real event stream carries and
+		// it exercises the renderer's compaction path.
+		data := fmt.Sprintf(`{"index":%d,"text":"chunk %d"}`, i, i)
+		frame := fmt.Sprintf("event: delta\ndata: %s\n", data)
+
+		last := i == count-1
+		if !(last && r.URL.Query().Get("noterm") == "1") {
+			frame += "\n"
+		}
+
+		if _, err := io.WriteString(w, frame); err != nil {
+			return
+		}
+		flusher.Flush()
+
+		if !last {
+			select {
+			case <-time.After(delay):
+			case <-r.Context().Done():
+				return
+			}
+		}
+	}
 }

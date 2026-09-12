@@ -548,6 +548,68 @@ HTTP/1.1 200 OK
 `-v` shows the request that was actually sent — including headers filled in by
 defaults — followed by a blank line and the response, on stdout.
 
+### Scenario U — streaming and server-sent events
+
+The fixture's `/sse` endpoint streams events. `events=N` sets how many,
+`delay=D` the pause between them, `keepalive=1` prepends a comment frame, and
+`noterm=1` omits the final blank line.
+
+```shell
+$ ./rq get "localhost:8080/sse?events=3" --http -B
+● delta  {"index":0,"text":"chunk 0"}
+● delta  {"index":1,"text":"chunk 1"}
+● delta  {"index":2,"text":"chunk 2"}
+3 events · 84 B · first 2ms · total 22ms · 131.3 events/s
+```
+
+Confirm it is genuinely incremental rather than buffered — the offsets should
+step by roughly the delay, not all land together:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=4&delay=300ms" --http -B -v
+● delta 1ms  {"index":0,"text":"chunk 0"}
+● delta 302ms  {"index":1,"text":"chunk 1"}
+● delta 603ms  {"index":2,"text":"chunk 2"}
+● delta 904ms  {"index":3,"text":"chunk 3"}
+```
+
+Keepalives are framing, so they are neither rendered nor counted — but `--raw`
+shows them:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=2&keepalive=1" --http -B --raw
+: keepalive
+event: delta
+data: {"index":0,"text":"chunk 0"}
+event: delta
+data: {"index":1,"text":"chunk 1"}
+```
+
+The summary is on stderr, so a pipe sees only events:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=2" --http -B 2>/dev/null
+● delta  {"index":0,"text":"chunk 0"}
+● delta  {"index":1,"text":"chunk 1"}
+```
+
+`--timeout` bounds the headers, not the stream. This must print all three
+events and take about 1.2s, not stop after one second:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=3&delay=400ms" --http -B --timeout 1s
+```
+
+Ctrl-C keeps what arrived, prints the summary, and exits 130:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=50&delay=200ms" --http -B
+^C
+5 events · 140 B · first 1ms · total 988ms · 5.1 events/s
+$ echo $?
+130
+```
+
 ### Scenario S — --check-status and exit codes
 
 ```shell

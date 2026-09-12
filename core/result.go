@@ -8,6 +8,7 @@ import (
 	"mime"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dsnet/compress/brotli"
@@ -27,6 +28,18 @@ type Result struct {
 	Body       []byte
 	Timing     Timing
 
+	// Stream is non-nil when the response is being consumed incrementally,
+	// in which case Body is nil and the caller reads events from here until
+	// io.EOF. The two are never both populated: a stream has no complete
+	// body to hand over, which is the whole reason it is a stream.
+	Stream *Stream
+
+	// cleanup releases the connection and the request context. It is nil for
+	// a buffered result, whose body Send has already closed.
+	cleanup   func() error
+	closeOnce sync.Once
+	closeErr  error
+
 	// Request is the request as it was actually sent, captured by Send.
 	// Populated unconditionally; whether to display it is a rendering
 	// decision (-v), not a transport one.
@@ -35,7 +48,29 @@ type Result struct {
 
 // Timing records how long the exchange took.
 type Timing struct {
+	// TTFB is the time from sending the request to the response headers
+	// arriving. For a stream this is the only part Total cannot cover, since
+	// the body is still being delivered.
+	TTFB time.Duration
+	// Total is the full exchange for a buffered response. For a stream it is
+	// zero until the stream ends; read Stream.Stats instead while it runs.
 	Total time.Duration
+}
+
+// Close releases the connection behind a streamed result. It is safe to call
+// on any result, including a buffered one, and safe to call more than once —
+// so a caller can always `defer result.Close()` without first checking which
+// kind it got back.
+//
+// It is also safe to call concurrently, which the CLI relies on: a signal
+// handler closes the result to unblock a read that is parked waiting for the
+// next frame, racing the deferred close on the way out.
+func (r *Result) Close() error {
+	if r == nil || r.cleanup == nil {
+		return nil
+	}
+	r.closeOnce.Do(func() { r.closeErr = r.cleanup() })
+	return r.closeErr
 }
 
 // NewResult reads and decompresses a response into a Result.
@@ -64,7 +99,14 @@ func NewResult(res *http.Response) (*Result, error) {
 // It returns an empty string when the header is absent or unparseable, which
 // callers treat as "sniff it instead".
 func (r *Result) MediaType() string {
-	raw := r.Headers.Get("Content-Type")
+	return mediaTypeOf(r.Headers)
+}
+
+// mediaTypeOf extracts the bare media type from a header set. It is shared by
+// Result.MediaType and the streaming check in Send, which has to decide before
+// there is a Result to ask.
+func mediaTypeOf(headers http.Header) string {
+	raw := headers.Get("Content-Type")
 	if raw == "" {
 		return ""
 	}
@@ -75,6 +117,10 @@ func (r *Result) MediaType() string {
 	}
 	return strings.ToLower(strings.TrimSpace(mediaType))
 }
+
+// EventStreamMediaType is the content type that turns on incremental
+// rendering without the user asking for it.
+const EventStreamMediaType = "text/event-stream"
 
 // readResponseBody reads the body, decompressing it if the server encoded it.
 func readResponseBody(res *http.Response) ([]byte, error) {

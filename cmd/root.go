@@ -132,6 +132,9 @@ func init() {
 	flags.BoolVar(&opts.Redirect, "redirect", false, "Follow redirects.")
 	flags.StringVar(&opts.Style, "style", render.DefaultStyle, "Syntax highlighting theme for non-json bodies.")
 
+	flags.BoolVar(&opts.Stream, "stream", false, "Render the response incrementally. Automatic for text/event-stream.")
+	flags.BoolVar(&opts.Raw, "raw", false, "With a stream, print each event as the raw frame it arrived in.")
+
 	flags.BoolVar(&opts.CheckStatus, "check-status", false, "Exit with HTTPie's 3/4/5 status codes on a 3xx/4xx/5xx response.")
 	flags.BoolVar(&opts.IgnoreStdin, "ignore-stdin", false, "Never read a request body from piped stdin.")
 

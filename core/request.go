@@ -8,12 +8,15 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	auth "github.com/mohamadkrayem/requestCLI/authentication"
@@ -74,6 +77,11 @@ type SendOptions struct {
 	// Insecure disables TLS certificate verification. Off by default.
 	Insecure bool
 	Timeout  time.Duration
+
+	// Stream forces incremental delivery regardless of the response content
+	// type. A text/event-stream response streams either way; this is for a
+	// server that streams under a different type, or none at all.
+	Stream bool
 }
 
 // NewRequest creates a new BaseRequest object.
@@ -157,8 +165,20 @@ func (req *BaseRequest) Send(opts SendOptions) (*Result, error) {
 		timeout = DefaultTimeout
 	}
 
+	// The deadline is a cancellable timer rather than http.Client.Timeout
+	// because that field also bounds reading the body, and there is no way to
+	// lift it once the response turns out to be a stream. Here the timer is
+	// stopped as soon as the headers say so, leaving the stream itself
+	// unbounded — which is the only useful behaviour for an endpoint whose
+	// whole purpose is to stay open.
+	ctx, cancel := context.WithCancel(context.Background())
+	var timedOut atomic.Bool
+	deadline := time.AfterFunc(timeout, func() {
+		timedOut.Store(true)
+		cancel()
+	})
+
 	client := &http.Client{
-		Timeout: timeout,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			if opts.Redirect {
 				return nil
@@ -200,8 +220,10 @@ func (req *BaseRequest) Send(opts SendOptions) (*Result, error) {
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
-	reqHTTP, err := http.NewRequest(req.Method, req.URL, bodyReader)
+	reqHTTP, err := http.NewRequestWithContext(ctx, req.Method, req.URL, bodyReader)
 	if err != nil {
+		deadline.Stop()
+		cancel()
 		return nil, fmt.Errorf("building %s request for %s: %w", req.Method, req.URL, err)
 	}
 
@@ -245,16 +267,85 @@ func (req *BaseRequest) Send(opts SendOptions) (*Result, error) {
 	start := time.Now()
 	resp, err := client.Do(reqHTTP)
 	if err != nil {
+		deadline.Stop()
+		cancel()
+		// A cancelled context reports "context canceled", which says nothing
+		// about what the user set. Name the timeout instead.
+		if timedOut.Load() {
+			err = fmt.Errorf("timed out after %s", timeout)
+		}
 		return nil, &TransportError{Err: fmt.Errorf("sending %s %s: %w", req.Method, req.URL, err)}
 	}
+	ttfb := time.Since(start)
+
+	if opts.Stream || mediaTypeOf(resp.Header) == EventStreamMediaType {
+		// The headers arrived inside the deadline; the stream itself is not
+		// bounded by it.
+		deadline.Stop()
+		return newStreamingResult(resp, sentRequest, start, ttfb, cancel)
+	}
+
 	defer func() { _ = resp.Body.Close() }()
+	defer cancel()
 
 	result, err := NewResult(resp)
 	if err != nil {
+		if timedOut.Load() {
+			return nil, &TransportError{
+				Err: fmt.Errorf("sending %s %s: timed out after %s", req.Method, req.URL, timeout),
+			}
+		}
 		return nil, err
 	}
+	deadline.Stop()
+	result.Timing.TTFB = ttfb
 	result.Timing.Total = time.Since(start)
 	result.Request = sentRequest
+	return result, nil
+}
+
+// newStreamingResult builds a Result whose body is still open, handing the
+// caller the decoder chain and the means to shut it down.
+func newStreamingResult(
+	resp *http.Response,
+	sent *SentRequest,
+	start time.Time,
+	ttfb time.Duration,
+	cancel context.CancelFunc,
+) (*Result, error) {
+	reader, err := decompressingReader(resp)
+	if err != nil {
+		cancel()
+		_ = resp.Body.Close()
+		return nil, err
+	}
+
+	result := &Result{
+		Proto:      resp.Proto,
+		Status:     resp.Status,
+		StatusCode: resp.StatusCode,
+		Headers:    resp.Header,
+		Request:    sent,
+	}
+	result.Timing.TTFB = ttfb
+	result.Stream = newStream(reader, resp.Body, start, nil)
+	result.cleanup = func() error {
+		// Cancel first: a read blocked on a server that never sends again
+		// would otherwise keep Close waiting.
+		cancel()
+		err := resp.Body.Close()
+		// The decoder is closed too when it has its own state to release,
+		// which gzip does.
+		if closer, ok := reader.(io.Closer); ok && reader != resp.Body {
+			if cerr := closer.Close(); err == nil {
+				err = cerr
+			}
+		}
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return err
+	}
 	return result, nil
 }
 

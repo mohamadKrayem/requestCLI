@@ -1,6 +1,7 @@
 # Build output. Anchored to the repo root: an unanchored `rq` also matches the
 # cmd/rq/ source directory and silently keeps the entry point out of git.
 /rq
+/echoserver
 dist/
 
 # Test and coverage artifacts

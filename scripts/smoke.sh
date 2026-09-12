@@ -153,7 +153,7 @@ check "request really used TLS"         '"tls": true' "$BIN" get "$HTTPS/" -B -k
 
 echo
 echo "== Timeouts =="
-check "timeout is enforced" "Client.Timeout" \
+check "timeout is enforced" "timed out after 1s" \
   "$BIN" get "$HTTP/slow?seconds=5" --timeout 1s -S
 
 echo
@@ -176,6 +176,53 @@ echo
 echo "== -v/--verbose =="
 check "-v shows the request line" "GET / HTTP/1.1"  "$BIN" get "$HTTP/" -v -S
 check "-v shows a request header" "Accept:"          "$BIN" get "$HTTP/" -v -S
+
+echo
+echo "== Streaming =="
+# text/event-stream is streamed without asking.
+check "sse is auto-detected" "delta" "$BIN" get "$HTTP/sse?events=2" --http -B
+check "sse event data is rendered" '"index":0' "$BIN" get "$HTTP/sse?events=2" --http -B
+check "sse summary counts events" "2 events" "$BIN" get "$HTTP/sse?events=2" --http -B
+
+# The summary goes to stderr so a pipe carries only events.
+check_not "sse summary stays off stdout" "events ·" \
+  sh -c "$BIN get '$HTTP/sse?events=2' --http -B 2>/dev/null"
+
+# A keepalive comment is framing, not an event: it must not print a blank line
+# and must not be counted.
+check "sse keepalives are not counted" "2 events" \
+  "$BIN" get "$HTTP/sse?events=2&keepalive=1" --http -B
+check_not "sse keepalives are not rendered" ": keepalive" \
+  "$BIN" get "$HTTP/sse?events=2&keepalive=1" --http -B
+
+# --raw exists to show framing, so it must show what the parsed view hides.
+check "sse --raw shows keepalive frames" ": keepalive" \
+  "$BIN" get "$HTTP/sse?events=2&keepalive=1" --http -B --raw
+check "sse --raw shows the data field" "data: " \
+  "$BIN" get "$HTTP/sse?events=1" --http -B --raw
+check_not "sse --raw drops the parsed marker" "●" \
+  "$BIN" get "$HTTP/sse?events=1" --http -B --raw
+
+# A stream cut off without its final blank line still shows the last frame.
+check "sse shows an unterminated final frame" '"index":1' \
+  "$BIN" get "$HTTP/sse?events=2&noterm=1" --http -B
+
+# --stream forces incremental rendering for a server that does not advertise
+# the content type.
+check "--stream forces streaming on any content type" "message" \
+  "$BIN" get "$HTTP/text" --http -B --stream
+
+# -v adds each event's offset from the start of the request.
+check "-v adds per-event timing" "ms" "$BIN" get "$HTTP/sse?events=1" --http -B -v
+
+# The status line still comes from the same renderer as a buffered response.
+check "sse still prints a status line" "200 OK" "$BIN" get "$HTTP/sse?events=1" --http -S
+
+# The regression this whole change exists to prevent: --timeout must bound the
+# headers, not the life of the stream. A 1s timeout across a ~1.2s stream used
+# to kill it at 1s.
+check "--timeout does not kill a longer stream" "3 events" \
+  "$BIN" get "$HTTP/sse?events=3&delay=400ms" --http -B --timeout 1s
 
 echo
 echo "== Error handling =="
