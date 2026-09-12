@@ -77,6 +77,14 @@ type Options struct {
 	// Raw prints each event as the frame it arrived in, comments included,
 	// instead of as a parsed event.
 	Raw bool
+
+	// Vars holds --var name=value definitions for a .http file run. They are
+	// raw strings so an invalid one can be reported with the text the user
+	// typed.
+	Vars []string
+	// RequestName selects a single named request from a .http file. Empty
+	// runs every request in the file.
+	RequestName string
 }
 
 // interruptExitCode is the conventional 128 + SIGINT. A stream is normally

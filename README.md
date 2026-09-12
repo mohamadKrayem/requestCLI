@@ -254,6 +254,64 @@ HTTP/1.1 200 OK
 
 `Authorization` and `Cookie` are shown unmasked.
 
+### `.http` files
+
+Requests can live in a file instead of a command line. The format is the one VS
+Code REST Client, the JetBrains HTTP Client and kulala.nvim already read, so
+files written for any of them work unchanged — and files written here stay
+readable in all of them.
+
+```http
+@base = https://api.example.com
+@who = ada
+
+### Create a user
+POST {{base}}/users
+Content-Type: application/json
+X-Token: {{token}}
+
+{"name":"{{who}}"}
+
+### List users
+GET {{base}}/users
+```
+
+```shell
+$ rq run api.http                        # every request, in order
+$ rq run api.http --name "List users"    # just that one
+$ rq run api.http --var token=abc123     # supply a {{variable}}
+```
+
+Every global flag applies, so `-B`, `-v`, `--check-status` and the rest behave
+exactly as they do on the command line.
+
+| Syntax | Meaning |
+| ------ | ------- |
+| `###` | Separates requests; trailing text names the one that follows |
+| `# @name x` | Names a request explicitly |
+| `@name = value` | A file-level variable |
+| `{{name}}` | Substituted from `@name` or `--var` (`--var` wins) |
+| `# …` / `// …` | Comment |
+| `< ./body.json` | Body read from a file, relative to the `.http` file |
+| `GET url HTTP/1.1` | The version is accepted and ignored |
+| a bare URL | Treated as `GET` |
+
+Requests run in order and **stop at the first failure**, because a file is
+usually a sequence and continuing past a broken step buries the real error
+under a cascade. When more than one request runs, a heading naming each goes to
+stderr, so a piped run carries response bodies and nothing else.
+
+Errors report `file:line:`, which editors and terminals turn into a jump:
+
+```
+$ rq run api.http
+Error: api.http:7: unknown variable {{token}}
+```
+
+> **Not yet implemented:** environments, collection directories with inherited
+> defaults, `{{secret:…}}`, `{{$uuid}}` and `rq vars`. A file using them will
+> report the variable as unknown rather than silently sending the wrong thing.
+
 ### Streaming and server-sent events
 
 A `text/event-stream` response is rendered incrementally, frame by frame, with

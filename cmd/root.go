@@ -105,6 +105,36 @@ func newMethodCmd(use, method, short string, aliases []string) *cobra.Command {
 	}
 }
 
+// newRunCmd builds the `rq run` subcommand, which sends the requests in a
+// .http file rather than one assembled from the command line.
+//
+// It is not built by newMethodCmd because it takes a file rather than a URL
+// and a method, and the verb comes from the file.
+func newRunCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "run FILE [flags]",
+		Short: "Send the requests in a .http file.",
+		Long: `Send the requests in a .http file.
+
+The format is the one VS Code REST Client, the JetBrains HTTP Client and
+kulala.nvim already read, so existing files work unchanged.
+
+Requests run in file order and stop at the first failure. Use --name to send a
+single named request, and --var to supply a {{variable}}.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return command.RunFile(args[0], opts)
+		},
+	}
+
+	cmd.Flags().StringVar(&opts.RequestName, "name", "", "Send only the request with this name.")
+	// A repeatable flag rather than a map: StringToString splits on commas,
+	// which would corrupt any value containing one.
+	cmd.Flags().StringArrayVar(&opts.Vars, "var", nil, "Set a {{variable}}, as name=value. Repeatable.")
+
+	return cmd
+}
+
 func init() {
 	flags := rootCmd.PersistentFlags()
 
@@ -153,4 +183,6 @@ func init() {
 	for _, m := range methods {
 		rootCmd.AddCommand(newMethodCmd(m.use, m.method, m.short, m.aliases))
 	}
+
+	rootCmd.AddCommand(newRunCmd())
 }

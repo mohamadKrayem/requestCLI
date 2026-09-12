@@ -8,10 +8,11 @@ here is layering, error handling, and safe network defaults.
 
 ```
 cmd/rq/main.go      entry point
-  └── cmd/          flag definitions and one subcommand per HTTP verb
+  └── cmd/          flag definitions, one subcommand per HTTP verb, and `run`
         └── command/    turns flags + request items into a request, renders the result
               ├── reqitem/  parses HTTPie-style positional request items
               │     └── input/           multipart form and file bodies
+              ├── httpfile/ parses .http files and resolves {{variables}}
               ├── core/     builds and sends the request -> Result
               │     ├── formats/         json validation for command-line input
               │     ├── input/           multipart form and file bodies
@@ -51,6 +52,19 @@ concern, so it sits beside `core` rather than inside it: `core` must stay
 usable by a front-end that never sees a command line. Only `command` imports
 it; `cmd` does not, and `input` does not import it either, so CLI syntax never
 sinks below `core`.
+
+### httpfile/
+
+Parses `.http` request files into `httpfile.Request` values and substitutes
+`{{variables}}`. Standard library only: it does not import `core`, for the same
+reason `reqitem` does not — a request file is a source format, not a transport
+concern, and `core` has to stay usable by a front-end that never reads one.
+
+Variable precedence is the order of `Resolver.Sources`, lowest first. Today
+there are two (file-level `@vars`, then `--var`); the full model inserts system,
+collection, environment and request scopes between them without changing the
+resolution logic. `Source.Origin` names where a value came from, which is what
+`rq vars` will report.
 
 ### core/
 
@@ -299,3 +313,45 @@ preserves them.
 2026-09-12 — Print events on stdout and the summary on stderr — piping a stream
 into a parser must yield events and nothing else, and the summary is diagnostic
 output about the exchange rather than part of it.
+
+2026-09-12 — Parse `.http` files in a new `httpfile` package that imports only
+the standard library — a request file is a source format, not a transport
+concern. Keeping it out of `core` is the same rule that keeps `reqitem` out:
+`core` must stay usable by a front-end that never reads a file, and a grammar
+with this many edge cases needs to be testable without building a request.
+`command` maps the parsed request onto `core.BaseRequest`.
+
+2026-09-12 — Adopt the existing `.http` dialect rather than inventing a format —
+it is already read by VS Code REST Client, the JetBrains HTTP Client and
+kulala.nvim, so files move in both directions and every one of those editors is
+an on-ramp. The parser therefore tolerates constructs it does not implement
+(`# @ignore`, `# @snapshot`) instead of rejecting them, which is what lets the
+format be extended later without forking it.
+
+2026-09-12 — Express variable precedence as an ordered list of `Source` values
+rather than branching — the eventual model has eight scopes (system file,
+collection defaults, nested collection, environment, file, request, command
+line, plus built-ins), and each one becomes a Source inserted at the right
+index with nothing else changing. `Source.Origin` is on the interface from the
+start because `rq vars` has to report where a value came from, and that is
+impossible to add afterwards without touching every source.
+
+2026-09-12 — Substitute variables in a single pass — a value that itself
+contains `{{…}}` is left alone. Recursive expansion invites cycles and lets an
+injected value quietly become a reference, and no other client of this format
+resolves recursively.
+
+2026-09-12 — Report an unresolved variable as an error naming it, rather than
+leaving `{{base_url}}` in the URL — otherwise the failure surfaces much later
+as a confusing DNS or connection error against a literal brace.
+
+2026-09-12 — Report positions as `file:line:` — editors and terminals turn that
+form into a clickable jump, which matters more than prose for a feature whose
+whole subject is a file the user is editing.
+
+2026-09-12 — Run the requests in a file in order and stop at the first failure —
+a file is usually a sequence (log in, then use the token), and continuing past
+a broken step produces a cascade that hides the real error.
+
+2026-09-12 — Print per-request headings on stderr, like the stream summary — a
+piped run must carry response bodies and nothing else.

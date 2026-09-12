@@ -178,6 +178,63 @@ check "-v shows the request line" "GET / HTTP/1.1"  "$BIN" get "$HTTP/" -v -S
 check "-v shows a request header" "Accept:"          "$BIN" get "$HTTP/" -v -S
 
 echo
+echo "== .http files =="
+HTTPFILE="$WORK/api.http"
+cat > "$HTTPFILE" <<HTTPDOC
+@base = http://$HTTP
+@who = body-value-ada
+@token = header-value-xyz
+
+### Create a user
+POST {{base}}/
+Content-Type: application/json
+X-Token: {{token}}
+
+{"name":"{{who}}"}
+
+### Health check
+GET {{base}}/json
+HTTPDOC
+
+check "runs every request in the file" '"name": "Mohamad"' "$BIN" run "$HTTPFILE" --http -B
+check "resolves a file variable in the url" '"path": "/"' "$BIN" run "$HTTPFILE" --name "Create a user" --http -B
+check "resolves a variable in a header" "header-value-xyz" \
+  "$BIN" run "$HTTPFILE" --name "Create a user" --http -B
+check "resolves a variable in the body" "body-value-ada" \
+  "$BIN" run "$HTTPFILE" --name "Create a user" --http -B
+check "--var overrides a file variable" "grace-override" \
+  "$BIN" run "$HTTPFILE" --name "Create a user" --var who=grace-override --http -B
+
+# Headings only exist to tell several responses apart, and they go to stderr so
+# a piped run carries bodies and nothing else.
+check_not "headings stay off stdout" "###" \
+  sh -c "$BIN run '$HTTPFILE' --http -B 2>/dev/null"
+
+# A typo in --name should be a one-step fix, not a hunt.
+check "an unknown --name lists what is available" "Health check" \
+  "$BIN" run "$HTTPFILE" --name nope --http -S
+
+# A body kept in its own file, which is how anyone holds a large payload
+# outside the request document.
+printf '{"marker":"body-from-file"}' > "$WORK/payload.json"
+printf 'POST http://%s/\nContent-Type: application/json\n\n< ./payload.json\n' "$HTTP" > "$WORK/bodyfile.http"
+check "reads a body from < ./file" "body-from-file" "$BIN" run "$WORK/bodyfile.http" --http -B
+
+# Errors must say where. file:line: is what an editor turns into a jump.
+printf 'GET http://%s/\nbad header line\n' "$HTTP" > "$WORK/broken.http"
+check "a parse error reports file:line:" "broken.http:2:" "$BIN" run "$WORK/broken.http" --http -S
+printf 'GET http://%s/{{missing}}\n' "$HTTP" > "$WORK/unknown.http"
+check "an unknown variable is named" "unknown variable {{missing}}" \
+  "$BIN" run "$WORK/unknown.http" --http -S
+
+# A sequence stops at the first failure rather than cascading.
+printf '### first\nGET http://%s/status/500\n\n### second\nGET http://%s/json\n' "$HTTP" "$HTTP" > "$WORK/failing.http"
+check_exit "--check-status stops at the first failure" 5 \
+  "$BIN" run "$WORK/failing.http" --http -S --check-status
+check_not "and does not run what follows" "Mohamad" \
+  "$BIN" run "$WORK/failing.http" --http -B --check-status
+
+echo
 echo "== Streaming =="
 # text/event-stream is streamed without asking.
 check "sse is auto-detected" "delta" "$BIN" get "$HTTP/sse?events=2" --http -B
