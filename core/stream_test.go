@@ -1,6 +1,7 @@
 package core
 
 import (
+	"compress/gzip"
 	"errors"
 	"io"
 	"net/http"
@@ -425,5 +426,76 @@ func TestSendTimeoutStillBoundsHeaders(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "timed out after 100ms") {
 		t.Errorf("error = %q, want it to name the timeout", err)
+	}
+}
+
+// A gzip-encoded event stream must still arrive frame by frame. gzip.Reader
+// decodes incrementally only if the server flushes its writer per frame.
+func TestGzippedEventStreamIsIncremental(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(http.StatusOK)
+
+		gz := gzip.NewWriter(w)
+		flusher := w.(http.Flusher)
+
+		_, _ = io.WriteString(gz, "data: first\n\n")
+		_ = gz.Flush()
+		flusher.Flush()
+
+		<-release
+
+		_, _ = io.WriteString(gz, "data: second\n\n")
+		_ = gz.Close()
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	req := NewRequest(http.MethodGet, server.URL)
+	result, err := req.Send(SendOptions{Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	defer func() { _ = result.Close() }()
+
+	if result.Stream == nil {
+		t.Fatal("gzipped event stream did not stream")
+	}
+
+	got := make(chan string, 1)
+	go func() {
+		event, err := result.Stream.Next()
+		if err != nil {
+			close(got)
+			return
+		}
+		got <- string(event.Data)
+	}()
+
+	select {
+	case data, ok := <-got:
+		if !ok {
+			t.Fatal("Next failed on a gzipped stream")
+		}
+		if data != "first" {
+			t.Errorf("first event = %q, want first", data)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("gzipped stream buffered: the first event did not arrive while the server held it open")
+	}
+
+	close(release)
+
+	event, err := result.Stream.Next()
+	if err != nil {
+		t.Fatalf("second Next: %v", err)
+	}
+	if string(event.Data) != "second" {
+		t.Errorf("second event = %q, want second", event.Data)
+	}
+	if _, err := result.Stream.Next(); !errors.Is(err, io.EOF) {
+		t.Errorf("want io.EOF at end, got %v", err)
 	}
 }
