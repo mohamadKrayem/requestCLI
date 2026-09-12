@@ -6,9 +6,8 @@
 #   ./scripts/release.sh                    # derives it from the current tag
 #
 # For each target this writes dist/rq_<version>_<os>_<arch>.tar.gz (unix) or
-# .zip (windows), laid out exactly as v1.2.0 shipped: one top-level directory
-# holding the binary, LICENSE, README.md, and — on unix only — a
-# `requestCLI -> rq` compatibility symlink. It then writes dist/SHA256SUMS.
+# .zip (windows): one top-level directory holding the binary, LICENSE and
+# README.md. It then writes dist/SHA256SUMS.
 #
 # The archives are byte-reproducible: ownership, order and timestamps are all
 # pinned, so anyone can rebuild a tag and check the published checksum rather
@@ -74,13 +73,6 @@ for target in "${targets[@]}"; do
     "$ROOT/cmd/rq"
 
   cp "$ROOT/LICENSE" "$ROOT/README.md" "$stage/"
-
-  # The pre-rename name, kept for one release. A relative symlink so it
-  # resolves wherever the archive is extracted. Windows zip carries no
-  # symlink: it would extract as a junk regular file on most tools.
-  if [[ "$os" != "windows" ]]; then
-    ln -s rq "$stage/requestCLI"
-  fi
 
   # Pin every mtime before archiving, including the directory itself.
   find "$stage" -exec touch --no-dereference --date="$TOUCH_DATE" {} +

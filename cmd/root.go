@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"github.com/mohamadkrayem/requestCLI/command"
 	"github.com/mohamadkrayem/requestCLI/core"
@@ -51,27 +50,8 @@ which default to http. Use --http to force plain HTTP.`,
 	},
 }
 
-// legacyNotice is the deprecation notice for the pre-rename binary name, or ""
-// when invoked under any other name.
-//
-// It lives here rather than in a main package because there are two of those
-// (cmd/rq and the module root) and a requestCLI symlink can point at either.
-func legacyNotice(argv0 string) string {
-	switch filepath.Base(argv0) {
-	case "requestCLI", "requestCLI.exe":
-		return "requestCLI is deprecated and will be removed in the next release; use rq"
-	}
-	return ""
-}
-
 // Execute runs the root command.
 func Execute() {
-	// On stderr, so piping stdout is unaffected; the command then runs exactly
-	// as it would under the new name.
-	if notice := legacyNotice(os.Args[0]); notice != "" {
-		fmt.Fprintln(os.Stderr, notice)
-	}
-
 	if err := rootCmd.Execute(); err != nil {
 		var exitErr *command.ExitError
 		if errors.As(err, &exitErr) {

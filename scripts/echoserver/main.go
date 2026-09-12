@@ -1,4 +1,4 @@
-// Command echoserver is a local fixture for exercising requestCLI by hand.
+// Command echoserver is a local fixture for exercising rq by hand.
 //
 // It echoes back whatever it received and exposes endpoints for redirects,
 // compression, auth, slow responses and arbitrary status codes. It serves both

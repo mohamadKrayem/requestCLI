@@ -1,5 +1,4 @@
 BINARY := rq
-LEGACY := requestCLI
 PKG    := ./...
 
 # Stamped into core.Version at link time. Falls back to the source default when
@@ -12,12 +11,8 @@ IMAGE   ?= rq
 
 all: fmt vet test build
 
-# Builds rq and a requestCLI symlink beside it, for one release of backward
-# compatibility. See ARCHITECTURE.md and the argv[0] deprecation notice in
-# cmd.Execute.
 build:
 	go build -o $(BINARY) ./cmd/rq
-	ln -sf $(BINARY) $(LEGACY)
 
 install:
 	go install ./cmd/rq
@@ -51,7 +46,7 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -f $(BINARY) $(LEGACY) coverage.out
+	rm -f $(BINARY) coverage.out
 	rm -rf dist/
 
 # --- Release --------------------------------------------------------------

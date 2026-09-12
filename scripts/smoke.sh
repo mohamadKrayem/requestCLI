@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# End-to-end smoke test for requestCLI.
+# End-to-end smoke test for rq.
 #
 # Builds the binary, starts the local echoserver fixture, runs every scenario
 # from TESTING.md and asserts on the output. Exits non-zero if anything fails.
@@ -12,7 +12,6 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 BIN="$WORK/rq"
-LEGACY_BIN="$WORK/requestCLI"
 HTTP="localhost:8080"
 HTTPS="https://localhost:8443"
 
@@ -58,7 +57,6 @@ check_not() {
 
 echo "==> Building"
 go build -o "$BIN" "$ROOT/cmd/rq" || exit 1
-ln -sf rq "$LEGACY_BIN"
 
 echo "==> Starting echoserver"
 # Refuse to run against a fixture we did not start. A stale server left over
@@ -178,13 +176,6 @@ echo
 echo "== -v/--verbose =="
 check "-v shows the request line" "GET / HTTP/1.1"  "$BIN" get "$HTTP/" -v -S
 check "-v shows a request header" "Accept:"          "$BIN" get "$HTTP/" -v -S
-
-echo
-echo "== requestCLI rename =="
-check "requestCLI name prints deprecation notice" \
-  "requestCLI is deprecated and will be removed in the next release; use rq" \
-  "$LEGACY_BIN" get "$HTTP/" -S
-check "requestCLI name still works" "200 OK" "$LEGACY_BIN" get "$HTTP/" -S
 
 echo
 echo "== Error handling =="

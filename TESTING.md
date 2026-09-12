@@ -59,8 +59,7 @@ Build the CLI in another:
 $ make build
 ```
 
-`make build` produces `rq` and a `requestCLI` symlink beside it — the
-scenarios below use `rq`.
+`make build` produces `rq`, which the scenarios below use.
 
 The catch-all endpoint echoes your request back as JSON, so you can see exactly
 what was sent. Available endpoints:
@@ -557,18 +556,6 @@ $ ./rq get localhost:8080/status/500 --check-status; echo $?    # 5
 $ ./rq get localhost:8080/redirect --check-status; echo $?      # 3 (not followed)
 $ ./rq get 127.0.0.1:1 --http --check-status; echo $?           # 2 (transport failure)
 $ ./rq get localhost:8080/status/404; echo $?                   # 0 — without the flag, still 0
-```
-
-### Scenario T — the rename
-
-`rq` is the current binary name. `requestCLI` still works as a symlink for one
-release, and warns:
-
-```shell
-$ ./requestCLI get localhost:8080/ -S
-requestCLI is deprecated and will be removed in the next release; use rq
-
-HTTP/1.1 200 OK
 ```
 
 ---

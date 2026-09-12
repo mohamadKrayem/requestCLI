@@ -1,13 +1,13 @@
 # Architecture
 
-requestCLI is a single-binary HTTP client. There is no server, no database and
+rq is a single-binary HTTP client. There is no server, no database and
 no persistent state, so most infrastructure concerns do not apply. What matters
 here is layering, error handling, and safe network defaults.
 
 ## Layers
 
 ```
-cmd/rq/main.go      entry point (main.go at the root: pre-rename entry point, one release)
+cmd/rq/main.go      entry point
   └── cmd/          flag definitions and one subcommand per HTTP verb
         └── command/    turns flags + request items into a request, renders the result
               ├── reqitem/  parses HTTPie-style positional request items
@@ -248,3 +248,11 @@ published binaries that nothing had verified.
 release so far has carried a hand-written upgrade guide, and `--generate-notes`
 would replace that prose with a commit list. The workflow assembles and attaches
 the artifacts; a human writes the notes and presses publish.
+
+2026-09-12 — Remove the `requestCLI` binary name in v1.3.0 — it shipped as a
+deprecated alias for all of v1.2.0 with an on-every-run stderr notice, and the
+README, the release notes and the notice itself all promised removal in the next
+release. This retires the argv[0] notice in `cmd.Execute`, the root `main`
+package, the symlink in the release archives and the one in the image. The
+module path stays `github.com/mohamadkrayem/requestCLI`: renaming it is a
+breaking import-path change that buys nothing.

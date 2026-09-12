@@ -6,9 +6,10 @@ The app offers advanced features such as request items, piped stdin bodies,
 handling cookies, basic authentication, multipart file uploads, and formatted,
 colorized output.
 
-> **Renamed from `requestCLI`.** The binary is now `rq`. A `requestCLI` symlink
-> ships alongside it for one release; running it prints a deprecation notice on
-> stderr and otherwise behaves identically. Scripts should move to `rq`.
+> **The `requestCLI` binary name is gone as of v1.3.0.** It shipped as a
+> deprecated alias throughout v1.2.0; the command is now `rq` only. If a script
+> still calls `requestCLI`, point it at `rq` — nothing else about the invocation
+> changed. The Go module path is unchanged.
 
 ## Installation
 
@@ -24,10 +25,10 @@ To install `rq`:
 $ go install github.com/mohamadkrayem/requestCLI/cmd/rq@latest
 ```
 
-> Before v1.2.0 the install path was the module root. That path still works for
-> this release, but `go install` names a binary after its import path, so it
-> installs `requestCLI`, which prints a deprecation notice on every run. Switch
-> to the `cmd/rq` path above.
+> The module root is no longer an installable path. `go install` names a binary
+> after the last element of its import path, so installing the root could only
+> ever produce `requestCLI`; `@latest` from that path now fails rather than
+> quietly installing the old name. Use the `cmd/rq` path above.
 
 Prebuilt binaries for Linux, macOS and Windows (amd64 and arm64) are attached to
 each [release](https://github.com/mohamadKrayem/requestCLI/releases).
@@ -40,7 +41,7 @@ $ cd requestCLI
 $ make build
 ```
 
-`make build` produces `rq` and a `requestCLI` symlink beside it.
+`make build` produces `rq`.
 
 ### Docker
 

@@ -68,10 +68,6 @@ RUN apk add --no-cache ca-certificates \
 
 COPY --from=build /out/rq /usr/local/bin/rq
 
-# requestCLI is the old binary name, kept as a symlink for one release; the
-# argv[0] deprecation notice lives in main.go.
-RUN ln -s /usr/local/bin/rq /usr/local/bin/requestCLI
-
 USER requestcli
 
 ENTRYPOINT ["rq"]
