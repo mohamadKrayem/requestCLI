@@ -220,3 +220,31 @@ its import path, so installing the module root could only ever produce
 `requestCLI`, which nags on every run and has no `rq` to switch to. This reverses
 the 2026-07-25 entry that rejected a second main package; the argv[0] notice
 moves into `cmd.Execute` so the two entry points share it rather than duplicate it.
+
+2026-09-12 — Package releases with a checked-in `scripts/release.sh` plus a
+tag-triggered workflow, rather than GoReleaser — the script reproduces the
+v1.2.0 archive layout exactly (including the `requestCLI -> rq` symlink), needs
+nothing beyond Go and coreutils to rehearse a tag locally, and keeps the
+reproducibility guarantees explicit and inspectable. GoReleaser would also work;
+revisit it if the project ever wants Homebrew, Scoop or Nix manifests, which it
+generates nearly for free and this script would not.
+
+2026-09-12 — Make the release archives byte-reproducible — pinned owner, sorted
+entries, an mtime from `SOURCE_DATE_EPOCH`, `gzip -n` and `zip -X`. Publishing
+`SHA256SUMS` is only worth something if a third party can rebuild the tag and
+regenerate the same digests; otherwise it protects against a corrupted download
+and nothing else.
+
+2026-09-12 — Fail the release when the git tag disagrees with `core.Version` —
+`go install` applies no link flags, so a module-path install reports the source
+default no matter what the tag says. A forgotten bump is otherwise invisible
+until the tag is public and someone reports the wrong `--version`.
+
+2026-09-12 — Run vet, tests and the smoke suite inside the release job — the CI
+workflow triggers only on `master` and pull requests, so until now a tag push
+published binaries that nothing had verified.
+
+2026-09-12 — Create the release as a draft rather than publishing it — every
+release so far has carried a hand-written upgrade guide, and `--generate-notes`
+would replace that prose with a commit list. The workflow assembles and attaches
+the artifacts; a human writes the notes and presses publish.

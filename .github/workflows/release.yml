@@ -1,0 +1,68 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the release and upload its assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # `go install` applies no ldflags, so someone installing the tag from the
+      # module path sees the source default, not the stamped version. If the two
+      # disagree the bump was forgotten, and that is only discoverable after the
+      # tag is public — so it fails here instead.
+      - name: Tag matches the version in source
+        run: |
+          go build -o /tmp/rq-unstamped ./cmd/rq
+          source_version="$(/tmp/rq-unstamped --version | awk '{print $NF}')"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$source_version" != "$tag_version" ]; then
+            echo "tag $GITHUB_REF_NAME implies version $tag_version," >&2
+            echo "but core.Version in source is $source_version." >&2
+            echo "Bump core.Version and re-tag." >&2
+            exit 1
+          fi
+          echo "version $tag_version confirmed"
+
+      # The CI workflow only runs on master and pull requests, so a tag push
+      # would otherwise publish binaries nothing had verified.
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: End-to-end smoke test
+        run: bash scripts/smoke.sh
+
+      - name: Build release artifacts
+        run: VERSION="${GITHUB_REF_NAME#v}" bash scripts/release.sh
+
+      # Drafted, not published: every release so far has carried a hand-written
+      # upgrade guide, and --generate-notes would replace that with a commit
+      # list. The assets and the commit log are ready; a human writes the prose
+      # and presses publish.
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME already exists; replacing its assets"
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --draft \
+              --title "rq $GITHUB_REF_NAME" \
+              --generate-notes
+          fi

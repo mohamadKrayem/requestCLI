@@ -487,6 +487,26 @@ $ make smoke    # end-to-end run of the real binary against a local fixture
 $ make server   # start the fixture server for manual testing
 ```
 
+## Releasing
+
+Pushing a `v*` tag runs the [Release workflow](.github/workflows/release.yml):
+it checks the tag against `core.Version`, runs vet, tests and the smoke suite,
+builds all six platform archives, and opens a **draft** release with them
+attached. Write the upgrade notes there, then publish.
+
+```shell
+$ make release              # rehearse locally; writes dist/
+$ VERSION=1.3.0 make release
+```
+
+Before tagging, bump `core.Version` in `core/request.go` to match. The workflow
+refuses a tag that disagrees with it, because `go install` applies no link
+flags — a module-path install reports whatever the source says.
+
+The archives are byte-reproducible: same tag, same toolchain, same checksums.
+To audit a published release rather than trust it, check the tag out, run
+`make release`, and compare `dist/SHA256SUMS` against the one attached to it.
+
 ## Technologies Used
 
 - Golang

@@ -64,9 +64,14 @@ echo "==> Starting echoserver"
 # Refuse to run against a fixture we did not start. A stale server left over
 # from a previous run answers on the same ports with an older build, which
 # produces confidently wrong results rather than an obvious failure.
+#
+# The probe is wrapped in `timeout` because a closed port does not always
+# refuse the connection: WSL2 and hardened firewalls drop the SYN instead, so
+# an unguarded /dev/tcp probe blocks for the kernel's full connect timeout —
+# minutes before the suite even starts. A timeout exit means nothing answered,
+# which is exactly the free-port case.
 for port in 8080 8443; do
-  if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
-    exec 3>&-
+  if timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null; then
     echo "port $port is already in use; stop the process holding it first" >&2
     exit 1
   fi
