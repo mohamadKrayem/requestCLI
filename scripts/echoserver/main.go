@@ -385,7 +385,7 @@ func serveSSE(w http.ResponseWriter, r *http.Request) {
 		frame := fmt.Sprintf("event: delta\ndata: %s\n", data)
 
 		last := i == count-1
-		if !(last && r.URL.Query().Get("noterm") == "1") {
+		if !last || r.URL.Query().Get("noterm") != "1" {
 			frame += "\n"
 		}
 

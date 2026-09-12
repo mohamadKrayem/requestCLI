@@ -102,15 +102,15 @@ func TestStreamMarksCommentOnlyFrames(t *testing.T) {
 		}
 	}
 
-	real := events[2]
-	if real.Comment {
+	dataFrame := events[2]
+	if dataFrame.Comment {
 		t.Error("the data frame was marked as a comment")
 	}
-	if string(real.Data) != "real" {
-		t.Errorf("Data = %q, want real", real.Data)
+	if string(dataFrame.Data) != "real" {
+		t.Errorf("Data = %q, want real", dataFrame.Data)
 	}
-	if real.Index != 0 {
-		t.Errorf("Index = %d, want 0 — keepalives must not consume an index", real.Index)
+	if dataFrame.Index != 0 {
+		t.Errorf("Index = %d, want 0 — keepalives must not consume an index", dataFrame.Index)
 	}
 	if stream.Stats().Events != 1 {
 		t.Errorf("Stats().Events = %d, want 1 — keepalives are not events", stream.Stats().Events)
