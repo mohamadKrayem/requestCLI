@@ -74,6 +74,7 @@ what was sent. Available endpoints:
 | `/deflate`       | deflate-encoded JSON                        |
 | `/redirect`      | 302 to `/moved`                             |
 | `/slow?seconds=5`| Sleeps before responding                    |
+| `/sse`           | Streams server-sent events. See Scenario U for its query parameters |
 | `/status/<code>` | Returns that status code                    |
 | `/basic-auth`    | Requires Basic Auth                         |
 | `/multipart`     | Parses a multipart form and reports it      |
@@ -550,9 +551,16 @@ defaults — followed by a blank line and the response, on stdout.
 
 ### Scenario U — streaming and server-sent events
 
-The fixture's `/sse` endpoint streams events. `events=N` sets how many,
-`delay=D` the pause between them, `keepalive=1` prepends a comment frame, and
-`noterm=1` omits the final blank line.
+The fixture's `/sse` endpoint streams events:
+
+| Parameter | Effect |
+| --------- | ------ |
+| `events=N` | how many events to send (default 3, max 100) |
+| `delay=D` | pause between events (default 10ms, max 5s) |
+| `keepalive=1` | prepend a comment frame, which must not render as an event |
+| `noterm=1` | omit the blank line after the final event |
+| `gzip=1` | gzip-encode the stream, flushed per frame |
+| `name=NAME` | set the `event:` field; `name=` sends frames with none |
 
 ```shell
 $ ./rq get "localhost:8080/sse?events=3" --http -B
@@ -598,6 +606,26 @@ events and take about 1.2s, not stop after one second:
 
 ```shell
 $ ./rq get "localhost:8080/sse?events=3&delay=400ms" --http -B --timeout 1s
+```
+
+A gzip-encoded stream must decode *and* stay incremental — the offsets should
+still step by the delay rather than arriving together. A compressor that is not
+flushed per frame would hold them back:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=4&delay=300ms&gzip=1" --http -B -v
+● delta 2ms  {"index":0,"text":"chunk 0"}
+● delta 303ms  {"index":1,"text":"chunk 1"}
+● delta 604ms  {"index":2,"text":"chunk 2"}
+● delta 904ms  {"index":3,"text":"chunk 3"}
+```
+
+A frame with no `event:` field is named `message`, per the SSE spec:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=2&name=" --http -B
+● message  {"index":0,"text":"chunk 0"}
+● message  {"index":1,"text":"chunk 1"}
 ```
 
 Ctrl-C keeps what arrived, prints the summary, and exits 130:

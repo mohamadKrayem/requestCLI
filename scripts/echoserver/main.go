@@ -1,9 +1,10 @@
 // Command echoserver is a local fixture for exercising rq by hand.
 //
 // It echoes back whatever it received and exposes endpoints for redirects,
-// compression, auth, slow responses and arbitrary status codes. It serves both
-// plain HTTP and HTTPS (with a self-signed certificate) so the TLS behaviour of
-// the client can be tested without touching the network.
+// compression, auth, slow responses, server-sent events and arbitrary status
+// codes. It serves both plain HTTP and HTTPS (with a self-signed certificate)
+// so the TLS behaviour of the client can be tested without touching the
+// network.
 //
 //	go run ./scripts/echoserver
 //
@@ -352,6 +353,10 @@ func selfSignedCert() (tls.Certificate, error) {
 //	             not render as an empty event
 //	noterm=1     omit the blank line after the final event, so a client can be
 //	             checked against a stream that is cut short
+//	gzip=1       gzip-encode the stream, flushing per frame so it stays
+//	             incremental
+//	name=NAME    use NAME for the event: field (default "delta"); name= sends
+//	             frames with no event: field at all
 func serveSSE(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -359,40 +364,84 @@ func serveSSE(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	query := r.URL.Query()
+
 	count := 3
-	if n, err := strconv.Atoi(r.URL.Query().Get("events")); err == nil && n >= 0 {
+	if n, err := strconv.Atoi(query.Get("events")); err == nil && n >= 0 {
 		count = min(n, 100)
 	}
 
 	delay := 10 * time.Millisecond
-	if d, err := time.ParseDuration(r.URL.Query().Get("delay")); err == nil && d >= 0 {
+	if d, err := time.ParseDuration(query.Get("delay")); err == nil && d >= 0 {
 		delay = min(d, 5*time.Second)
+	}
+
+	name := "delta"
+	if query.Has("name") {
+		name = query.Get("name")
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
+
+	// Content-Encoding has to be set before the status line goes out.
+	gzipped := query.Get("gzip") == "1"
+	if gzipped {
+		w.Header().Set("Content-Encoding", "gzip")
+	}
 	w.WriteHeader(http.StatusOK)
 
-	if r.URL.Query().Get("keepalive") == "1" {
-		_, _ = io.WriteString(w, ": keepalive\n\n")
-		flusher.Flush()
+	// out is where frames are written: the response directly, or through a
+	// gzip writer. Both are flushed per frame — flushing only the
+	// ResponseWriter would leave frames sitting in the compressor, and the
+	// stream would stop being incremental, which is the one property the
+	// client's tests are checking for.
+	out := io.Writer(w)
+	flush := func() { flusher.Flush() }
+
+	if gzipped {
+		gz := gzip.NewWriter(w)
+		defer func() {
+			if err := gz.Close(); err != nil {
+				log.Printf("closing sse gzip writer: %v", err)
+			}
+		}()
+		out = gz
+		flush = func() {
+			if err := gz.Flush(); err != nil {
+				log.Printf("flushing sse gzip writer: %v", err)
+			}
+			flusher.Flush()
+		}
+	}
+
+	if query.Get("keepalive") == "1" {
+		if _, err := io.WriteString(out, ": keepalive\n\n"); err != nil {
+			return
+		}
+		flush()
 	}
 
 	for i := range count {
 		// A JSON payload, because that is what a real event stream carries and
 		// it exercises the renderer's compaction path.
 		data := fmt.Sprintf(`{"index":%d,"text":"chunk %d"}`, i, i)
-		frame := fmt.Sprintf("event: delta\ndata: %s\n", data)
+
+		var frame string
+		if name != "" {
+			frame = fmt.Sprintf("event: %s\n", name)
+		}
+		frame += fmt.Sprintf("data: %s\n", data)
 
 		last := i == count-1
-		if !last || r.URL.Query().Get("noterm") != "1" {
+		if !last || query.Get("noterm") != "1" {
 			frame += "\n"
 		}
 
-		if _, err := io.WriteString(w, frame); err != nil {
+		if _, err := io.WriteString(out, frame); err != nil {
 			return
 		}
-		flusher.Flush()
+		flush()
 
 		if !last {
 			select {

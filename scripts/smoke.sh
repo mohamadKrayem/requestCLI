@@ -207,6 +207,20 @@ check_not "sse --raw drops the parsed marker" "●" \
 check "sse shows an unterminated final frame" '"index":1' \
   "$BIN" get "$HTTP/sse?events=2&noterm=1" --http -B
 
+# A gzip-encoded stream must decode. The incremental half of that claim is
+# pinned by a unit test that holds the stream open; here we check the bytes
+# come out right end to end.
+check "sse decodes a gzipped stream" '"index":1' \
+  "$BIN" get "$HTTP/sse?events=2&gzip=1" --http -B
+check "sse gzipped stream is announced as such" "gzip" \
+  "$BIN" get "$HTTP/sse?events=1&gzip=1" --http -H
+
+# A frame with no event: field is "message" per the spec.
+check "sse names an unnamed frame message" "message" \
+  "$BIN" get "$HTTP/sse?events=1&name=" --http -B
+check "sse passes a custom event name through" "content_block_delta" \
+  "$BIN" get "$HTTP/sse?events=1&name=content_block_delta" --http -B
+
 # --stream forces incremental rendering for a server that does not advertise
 # the content type.
 check "--stream forces streaming on any content type" "message" \
