@@ -284,7 +284,13 @@ check "--stream forces streaming on any content type" "message" \
   "$BIN" get "$HTTP/text" --http -B --stream
 
 # -v adds each event's offset from the start of the request.
-check "-v adds per-event timing" "ms" "$BIN" get "$HTTP/sse?events=1" --http -B -v
+#
+# Two events with a delay, not one: a single event can land in under a
+# millisecond, and formatDuration then renders it as microseconds. Asserting on
+# "ms" against one event is a bet on the machine being slow, which CI lost. The
+# second event here cannot arrive before the delay has passed.
+check "-v adds per-event timing" "ms" \
+  "$BIN" get "$HTTP/sse?events=2&delay=60ms" --http -B -v
 
 # The status line still comes from the same renderer as a buffered response.
 check "sse still prints a status line" "200 OK" "$BIN" get "$HTTP/sse?events=1" --http -S
