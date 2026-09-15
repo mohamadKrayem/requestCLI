@@ -1,17 +1,18 @@
 # Architecture
 
-requestCLI is a single-binary HTTP client. There is no server, no database and
+rq is a single-binary HTTP client. There is no server, no database and
 no persistent state, so most infrastructure concerns do not apply. What matters
 here is layering, error handling, and safe network defaults.
 
 ## Layers
 
 ```
-cmd/rq/main.go      entry point (main.go at the root: pre-rename entry point, one release)
-  └── cmd/          flag definitions and one subcommand per HTTP verb
+cmd/rq/main.go      entry point
+  └── cmd/          flag definitions, one subcommand per HTTP verb, and `run`
         └── command/    turns flags + request items into a request, renders the result
               ├── reqitem/  parses HTTPie-style positional request items
               │     └── input/           multipart form and file bodies
+              ├── httpfile/ parses .http files and resolves {{variables}}
               ├── core/     builds and sends the request -> Result
               │     ├── formats/         json validation for command-line input
               │     ├── input/           multipart form and file bodies
@@ -52,6 +53,19 @@ usable by a front-end that never sees a command line. Only `command` imports
 it; `cmd` does not, and `input` does not import it either, so CLI syntax never
 sinks below `core`.
 
+### httpfile/
+
+Parses `.http` request files into `httpfile.Request` values and substitutes
+`{{variables}}`. Standard library only: it does not import `core`, for the same
+reason `reqitem` does not — a request file is a source format, not a transport
+concern, and `core` has to stay usable by a front-end that never reads one.
+
+Variable precedence is the order of `Resolver.Sources`, lowest first. Today
+there are two (file-level `@vars`, then `--var`); the full model inserts system,
+collection, environment and request scopes between them without changing the
+resolution logic. `Source.Origin` names where a value came from, which is what
+`rq vars` will report.
+
 ### core/
 
 `BaseRequest` accumulates method, URL, headers, cookies, auth and body.
@@ -62,6 +76,14 @@ string concatenation.
 `Send` returns a `Result`: status, protocol, real `http.Header`, the
 decompressed body as `[]byte`, and timing. The body is never decoded here.
 `core` must not import `render`, `chroma`, or any terminal package.
+
+A `text/event-stream` response — or any response when `SendOptions.Stream` is
+set — comes back with `Result.Stream` populated and `Result.Body` nil. The two
+are never both present: a stream has no complete body to hand over. The caller
+then pulls `core.Event` values from `Stream.Next` until `io.EOF` and must
+`Close` the result, because `Send` can no longer close the body itself.
+`Result.Close` is safe on any result, repeatable, and safe to call
+concurrently — the CLI closes from a signal handler to unblock a parked read.
 
 ### render/
 
@@ -220,3 +242,116 @@ its import path, so installing the module root could only ever produce
 `requestCLI`, which nags on every run and has no `rq` to switch to. This reverses
 the 2026-07-25 entry that rejected a second main package; the argv[0] notice
 moves into `cmd.Execute` so the two entry points share it rather than duplicate it.
+
+2026-09-12 — Package releases with a checked-in `scripts/release.sh` plus a
+tag-triggered workflow, rather than GoReleaser — the script reproduces the
+v1.2.0 archive layout exactly (including the `requestCLI -> rq` symlink), needs
+nothing beyond Go and coreutils to rehearse a tag locally, and keeps the
+reproducibility guarantees explicit and inspectable. GoReleaser would also work;
+revisit it if the project ever wants Homebrew, Scoop or Nix manifests, which it
+generates nearly for free and this script would not.
+
+2026-09-12 — Make the release archives byte-reproducible — pinned owner, sorted
+entries, an mtime from `SOURCE_DATE_EPOCH`, `gzip -n` and `zip -X`. Publishing
+`SHA256SUMS` is only worth something if a third party can rebuild the tag and
+regenerate the same digests; otherwise it protects against a corrupted download
+and nothing else.
+
+2026-09-12 — Fail the release when the git tag disagrees with `core.Version` —
+`go install` applies no link flags, so a module-path install reports the source
+default no matter what the tag says. A forgotten bump is otherwise invisible
+until the tag is public and someone reports the wrong `--version`.
+
+2026-09-12 — Run vet, tests and the smoke suite inside the release job — the CI
+workflow triggers only on `master` and pull requests, so until now a tag push
+published binaries that nothing had verified.
+
+2026-09-12 — Create the release as a draft rather than publishing it — every
+release so far has carried a hand-written upgrade guide, and `--generate-notes`
+would replace that prose with a commit list. The workflow assembles and attaches
+the artifacts; a human writes the notes and presses publish.
+
+2026-09-12 — Remove the `requestCLI` binary name in v1.3.0 — it shipped as a
+deprecated alias for all of v1.2.0 with an on-every-run stderr notice, and the
+README, the release notes and the notice itself all promised removal in the next
+release. This retires the argv[0] notice in `cmd.Execute`, the root `main`
+package, the symlink in the release archives and the one in the image. The
+module path stays `github.com/mohamadkrayem/requestCLI`: renaming it is a
+breaking import-path change that buys nothing.
+
+2026-09-12 — Model a stream as `Result.Stream` alongside a nil `Body`, rather
+than turning `Body` into an `io.Reader` — every existing caller and both
+renderers consume `[]byte`, and making them all handle a reader in order to
+serve one new response type would push buffering into each of them. A front-end
+checks one field to know which kind of result it has.
+
+2026-09-12 — Bound a streamed request with a cancellable timer instead of
+`http.Client.Timeout` — that field also covers reading the body and cannot be
+lifted once the response turns out to be a stream, so the default 30s would cut
+off every long-lived stream. `--timeout` now bounds connect and headers for a
+stream, and still bounds the whole exchange for a buffered response. The visible
+cost is that a timeout no longer reports Go's "Client.Timeout exceeded"; it
+names the configured timeout instead, which is clearer anyway.
+
+2026-09-12 — Surface keepalive comment frames as events carrying `Comment:
+true`, instead of swallowing them in the parser — `--raw` exists to show
+framing, and a parser that drops comments makes it unable to. Returning them
+immediately also bounds memory, which accumulating them into the next event
+would not.
+
+2026-09-12 — Render a stream through a pure `render.Event` per event rather than
+letting `core` print — it keeps the constraint that `core` never touches a
+terminal, and it is what lets a TUI re-render a scrollback of events on resize.
+`command` owns the loop, the signal handling and the writer.
+
+2026-09-12 — Compact JSON event payloads onto one line instead of
+pretty-printing them — a stream is read as a sequence, and expanding each frame
+over a dozen lines hides the sequence it exists to show. Key order and integer
+precision are still preserved exactly, for the same reason the body renderer
+preserves them.
+
+2026-09-12 — Print events on stdout and the summary on stderr — piping a stream
+into a parser must yield events and nothing else, and the summary is diagnostic
+output about the exchange rather than part of it.
+
+2026-09-12 — Parse `.http` files in a new `httpfile` package that imports only
+the standard library — a request file is a source format, not a transport
+concern. Keeping it out of `core` is the same rule that keeps `reqitem` out:
+`core` must stay usable by a front-end that never reads a file, and a grammar
+with this many edge cases needs to be testable without building a request.
+`command` maps the parsed request onto `core.BaseRequest`.
+
+2026-09-12 — Adopt the existing `.http` dialect rather than inventing a format —
+it is already read by VS Code REST Client, the JetBrains HTTP Client and
+kulala.nvim, so files move in both directions and every one of those editors is
+an on-ramp. The parser therefore tolerates constructs it does not implement
+(`# @ignore`, `# @snapshot`) instead of rejecting them, which is what lets the
+format be extended later without forking it.
+
+2026-09-12 — Express variable precedence as an ordered list of `Source` values
+rather than branching — the eventual model has eight scopes (system file,
+collection defaults, nested collection, environment, file, request, command
+line, plus built-ins), and each one becomes a Source inserted at the right
+index with nothing else changing. `Source.Origin` is on the interface from the
+start because `rq vars` has to report where a value came from, and that is
+impossible to add afterwards without touching every source.
+
+2026-09-12 — Substitute variables in a single pass — a value that itself
+contains `{{…}}` is left alone. Recursive expansion invites cycles and lets an
+injected value quietly become a reference, and no other client of this format
+resolves recursively.
+
+2026-09-12 — Report an unresolved variable as an error naming it, rather than
+leaving `{{base_url}}` in the URL — otherwise the failure surfaces much later
+as a confusing DNS or connection error against a literal brace.
+
+2026-09-12 — Report positions as `file:line:` — editors and terminals turn that
+form into a clickable jump, which matters more than prose for a feature whose
+whole subject is a file the user is editing.
+
+2026-09-12 — Run the requests in a file in order and stop at the first failure —
+a file is usually a sequence (log in, then use the token), and continuing past
+a broken step produces a cascade that hides the real error.
+
+2026-09-12 — Print per-request headings on stderr, like the stream summary — a
+piped run must carry response bodies and nothing else.

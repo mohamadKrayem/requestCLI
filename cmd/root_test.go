@@ -84,23 +84,6 @@ func TestConnIsAcceptedAsAnAlias(t *testing.T) {
 	}
 }
 
-// The notice keys on the base name only, so it fires for a go-installed
-// requestCLI and a requestCLI symlink alike, and never for rq.
-func TestLegacyNoticeOnlyForTheOldName(t *testing.T) {
-	for argv0, wantNotice := range map[string]bool{
-		"rq":                         false,
-		"/usr/local/bin/rq":          false,
-		"requestCLI":                 true,
-		"/home/me/go/bin/requestCLI": true,
-		"requestCLI.exe":             true,
-		"requestCLI-old":             false,
-	} {
-		if got := legacyNotice(argv0) != ""; got != wantNotice {
-			t.Errorf("legacyNotice(%q) printed=%v, want %v", argv0, got, wantNotice)
-		}
-	}
-}
-
 func TestSecurityRelevantFlagsExist(t *testing.T) {
 	flags := rootCmd.PersistentFlags()
 

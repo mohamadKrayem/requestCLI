@@ -1,5 +1,4 @@
 BINARY := rq
-LEGACY := requestCLI
 PKG    := ./...
 
 # Stamped into core.Version at link time. Falls back to the source default when
@@ -8,16 +7,12 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 IMAGE   ?= rq
 
 .PHONY: all build test smoke server cover vet fmt lint tidy clean install \
-        docker-build docker-run docker-smoke docker-up docker-down
+        release docker-build docker-run docker-smoke docker-up docker-down
 
 all: fmt vet test build
 
-# Builds rq and a requestCLI symlink beside it, for one release of backward
-# compatibility. See ARCHITECTURE.md and the argv[0] deprecation notice in
-# cmd.Execute.
 build:
 	go build -o $(BINARY) ./cmd/rq
-	ln -sf $(BINARY) $(LEGACY)
 
 install:
 	go install ./cmd/rq
@@ -51,7 +46,16 @@ tidy:
 	go mod tidy
 
 clean:
-	rm -f $(BINARY) $(LEGACY) coverage.out
+	rm -f $(BINARY) coverage.out
+	rm -rf dist/
+
+# --- Release --------------------------------------------------------------
+
+# Builds every release archive into dist/, exactly as the Release workflow
+# does, so a tag can be rehearsed locally before it is pushed. The archives are
+# byte-reproducible, so this is also how a published checksum gets audited.
+release:
+	VERSION=$(VERSION) bash scripts/release.sh
 
 # --- Docker ---------------------------------------------------------------
 # The image is self-contained; none of these targets need a local Go toolchain.

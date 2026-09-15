@@ -34,6 +34,14 @@ type Options struct {
 
 	// Style is the chroma style used for non-JSON syntax highlighting.
 	Style string
+
+	// Raw prints server-sent events as the frames they arrived in, rather
+	// than as parsed events. It affects Event only.
+	Raw bool
+
+	// ShowEventTiming adds each event's offset from the start of the request.
+	// It affects Event only.
+	ShowEventTiming bool
 }
 
 // DefaultStyle is used when Options.Style is empty.

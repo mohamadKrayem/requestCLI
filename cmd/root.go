@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 
 	"github.com/mohamadkrayem/requestCLI/command"
 	"github.com/mohamadkrayem/requestCLI/core"
@@ -51,27 +50,8 @@ which default to http. Use --http to force plain HTTP.`,
 	},
 }
 
-// legacyNotice is the deprecation notice for the pre-rename binary name, or ""
-// when invoked under any other name.
-//
-// It lives here rather than in a main package because there are two of those
-// (cmd/rq and the module root) and a requestCLI symlink can point at either.
-func legacyNotice(argv0 string) string {
-	switch filepath.Base(argv0) {
-	case "requestCLI", "requestCLI.exe":
-		return "requestCLI is deprecated and will be removed in the next release; use rq"
-	}
-	return ""
-}
-
 // Execute runs the root command.
 func Execute() {
-	// On stderr, so piping stdout is unaffected; the command then runs exactly
-	// as it would under the new name.
-	if notice := legacyNotice(os.Args[0]); notice != "" {
-		fmt.Fprintln(os.Stderr, notice)
-	}
-
 	if err := rootCmd.Execute(); err != nil {
 		var exitErr *command.ExitError
 		if errors.As(err, &exitErr) {
@@ -125,6 +105,36 @@ func newMethodCmd(use, method, short string, aliases []string) *cobra.Command {
 	}
 }
 
+// newRunCmd builds the `rq run` subcommand, which sends the requests in a
+// .http file rather than one assembled from the command line.
+//
+// It is not built by newMethodCmd because it takes a file rather than a URL
+// and a method, and the verb comes from the file.
+func newRunCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "run FILE [flags]",
+		Short: "Send the requests in a .http file.",
+		Long: `Send the requests in a .http file.
+
+The format is the one VS Code REST Client, the JetBrains HTTP Client and
+kulala.nvim already read, so existing files work unchanged.
+
+Requests run in file order and stop at the first failure. Use --name to send a
+single named request, and --var to supply a {{variable}}.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return command.RunFile(args[0], opts)
+		},
+	}
+
+	cmd.Flags().StringVar(&opts.RequestName, "name", "", "Send only the request with this name.")
+	// A repeatable flag rather than a map: StringToString splits on commas,
+	// which would corrupt any value containing one.
+	cmd.Flags().StringArrayVar(&opts.Vars, "var", nil, "Set a {{variable}}, as name=value. Repeatable.")
+
+	return cmd
+}
+
 func init() {
 	flags := rootCmd.PersistentFlags()
 
@@ -152,6 +162,9 @@ func init() {
 	flags.BoolVar(&opts.Redirect, "redirect", false, "Follow redirects.")
 	flags.StringVar(&opts.Style, "style", render.DefaultStyle, "Syntax highlighting theme for non-json bodies.")
 
+	flags.BoolVar(&opts.Stream, "stream", false, "Render the response incrementally. Automatic for text/event-stream.")
+	flags.BoolVar(&opts.Raw, "raw", false, "With a stream, print each event as the raw frame it arrived in.")
+
 	flags.BoolVar(&opts.CheckStatus, "check-status", false, "Exit with HTTPie's 3/4/5 status codes on a 3xx/4xx/5xx response.")
 	flags.BoolVar(&opts.IgnoreStdin, "ignore-stdin", false, "Never read a request body from piped stdin.")
 
@@ -170,4 +183,6 @@ func init() {
 	for _, m := range methods {
 		rootCmd.AddCommand(newMethodCmd(m.use, m.method, m.short, m.aliases))
 	}
+
+	rootCmd.AddCommand(newRunCmd())
 }
