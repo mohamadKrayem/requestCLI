@@ -23,6 +23,14 @@ func Request(r *core.SentRequest, opts Options) string {
 	if r == nil {
 		return ""
 	}
+	// Masking wraps the whole block rather than each field: a credential can
+	// appear in a header, in the query string or in the body, and redacting
+	// the finished text catches all three without the renderer having to know
+	// which one carried it.
+	return maskSecrets(renderRequest(r, opts), opts.Mask)
+}
+
+func renderRequest(r *core.SentRequest, opts Options) string {
 
 	requestURI := r.URL
 	host := ""

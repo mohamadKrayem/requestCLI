@@ -6,9 +6,10 @@ The app offers advanced features such as request items, piped stdin bodies,
 handling cookies, basic authentication, multipart file uploads, and formatted,
 colorized output.
 
-> **Renamed from `requestCLI`.** The binary is now `rq`. A `requestCLI` symlink
-> ships alongside it for one release; running it prints a deprecation notice on
-> stderr and otherwise behaves identically. Scripts should move to `rq`.
+> **The `requestCLI` binary name is gone as of v1.3.0.** It shipped as a
+> deprecated alias throughout v1.2.0; the command is now `rq` only. If a script
+> still calls `requestCLI`, point it at `rq` — nothing else about the invocation
+> changed. The Go module path is unchanged.
 
 ## Installation
 
@@ -24,10 +25,10 @@ To install `rq`:
 $ go install github.com/mohamadkrayem/requestCLI/cmd/rq@latest
 ```
 
-> Before v1.2.0 the install path was the module root. That path still works for
-> this release, but `go install` names a binary after its import path, so it
-> installs `requestCLI`, which prints a deprecation notice on every run. Switch
-> to the `cmd/rq` path above.
+> The module root is no longer an installable path. `go install` names a binary
+> after the last element of its import path, so installing the root could only
+> ever produce `requestCLI`; `@latest` from that path now fails rather than
+> quietly installing the old name. Use the `cmd/rq` path above.
 
 Prebuilt binaries for Linux, macOS and Windows (amd64 and arm64) are attached to
 each [release](https://github.com/mohamadKrayem/requestCLI/releases).
@@ -40,7 +41,7 @@ $ cd requestCLI
 $ make build
 ```
 
-`make build` produces `rq` and a `requestCLI` symlink beside it.
+`make build` produces `rq`.
 
 ### Docker
 
@@ -252,6 +253,193 @@ HTTP/1.1 200 OK
 ```
 
 `Authorization` and `Cookie` are shown unmasked.
+
+### `.http` files
+
+Requests can live in a file instead of a command line. The format is the one VS
+Code REST Client, the JetBrains HTTP Client and kulala.nvim already read, so
+files written for any of them work unchanged — and files written here stay
+readable in all of them.
+
+```http
+@base = https://api.example.com
+@who = ada
+
+### Create a user
+POST {{base}}/users
+Content-Type: application/json
+X-Token: {{token}}
+
+{"name":"{{who}}"}
+
+### List users
+GET {{base}}/users
+```
+
+```shell
+$ rq run api.http                        # every request, in order
+$ rq run api.http --name "List users"    # just that one
+$ rq run api.http --var token=abc123     # supply a {{variable}}
+```
+
+Every global flag applies, so `-B`, `-v`, `--check-status` and the rest behave
+exactly as they do on the command line.
+
+| Syntax | Meaning |
+| ------ | ------- |
+| `###` | Separates requests; trailing text names the one that follows |
+| `# @name x` | Names a request explicitly |
+| `@name = value` | A file-level variable |
+| `{{name}}` | Substituted from `@name` or `--var` (`--var` wins) |
+| `# …` / `// …` | Comment |
+| `< ./body.json` | Body read from a file, relative to the `.http` file |
+| `GET url HTTP/1.1` | The version is accepted and ignored |
+| a bare URL | Treated as `GET` |
+
+Requests run in order and **stop at the first failure**, because a file is
+usually a sequence and continuing past a broken step buries the real error
+under a cascade. When more than one request runs, a heading naming each goes to
+stderr, so a piped run carries response bodies and nothing else.
+
+Errors report `file:line:`, which editors and terminals turn into a jump:
+
+```
+$ rq run api.http
+Error: api.http:7: unknown variable {{token}}
+```
+
+### Collections
+
+A collection is a **directory** containing an `rq.toml`, found by walking up
+from the request file the way git finds `.git`. There is no manifest, no export
+step and no ids: adding a request means creating a file, and renaming one is
+`mv`.
+
+```
+api/
+├── rq.toml                  # defaults inherited by everything below
+├── environments/
+│   ├── dev.toml
+│   └── staging.toml
+├── .rq.secrets.toml         # gitignored, never committed
+└── users/
+    ├── rq.toml              # merges over the parent
+    └── list.http
+```
+
+```toml
+# api/rq.toml
+[defaults]
+base_url = "https://api.example.com"
+
+[defaults.headers]
+Accept = "application/json"
+
+[defaults.auth]
+type  = "bearer"
+token = "{{secret:api_token}}"
+```
+
+Set the base URL and auth once; write requests as `GET {{base_url}}/users`.
+Headers merge down the chain and a nested value wins. Auth is replaced
+wholesale, so a subdirectory switching from bearer to basic does not inherit
+half of what it replaced.
+
+### Variables
+
+Where a value comes from is part of the reference, so `{{token}}` is never
+ambiguous the way it is in a GUI client:
+
+| Reference | Resolves from |
+| --- | --- |
+| `{{base_url}}` | An ordinary variable, by the precedence below |
+| `{{secret:api_token}}` | `.rq.secrets.toml`, then the environment — never committed |
+| `{{env:HOME}}` | The process environment |
+| `{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}` | Generated once per request |
+
+**Namespaces are not precedence levels.** A `{{secret:token}}` can never
+silently shadow an ordinary `{{token}}` — the failure mode that makes
+credential bugs hard to see.
+
+Ordinary variables resolve lowest to highest:
+
+| # | Scope | Lives in |
+| - | ----- | -------- |
+| 1 | Built-in | `{{$uuid}}` and friends |
+| 2 | System-wide | `~/.config/rq/vars.toml` — machine-local, warns when used |
+| 3 | Collection | `rq.toml` at the collection root |
+| 4 | Nested collection | `rq.toml` in a subdirectory |
+| 5 | Environment | `environments/<name>.toml`, via `--env` |
+| 6 | File | `@name = value` at the top of a `.http` file |
+| 7 | Request | `# @var name = value` above a request |
+| 8 | Command line | `--var name=value` |
+
+Resolving from the machine-local scope prints a warning: it works for you and
+fails for a teammate, which is a confusing thing to debug remotely.
+
+### `rq vars`
+
+```shell
+$ rq vars users/list.http --env staging
+$uuid            = (generated per request)  (built-in)
+api_ver          = staging-v2               (api/environments/staging.toml)
+base_url         = https://api.example.com  (api/rq.toml)
+page             = 7                        (api/users/list.http:3)
+secret:api_token = ****                     (api/.rq.secrets.toml)
+```
+
+Modelled on `git config --list --show-origin`. It reports variables referenced
+by inherited headers and auth as well as by the file, because those are what
+authenticate the request. Secrets are masked here and in `-v` output; pass
+`--show-secrets` to see them.
+
+> **Not yet implemented:** the OS keychain as a secret source, and
+> `{{login.response.body.token}}` references to an earlier request. A file
+> using either reports the variable as unknown rather than silently sending the
+> wrong thing.
+
+### Streaming and server-sent events
+
+A `text/event-stream` response is rendered incrementally, frame by frame, with
+no flag:
+
+```shell
+$ rq get api.example.com/events
+● delta  {"index":0,"text":"chunk 0"}
+● delta  {"index":1,"text":"chunk 1"}
+● delta  {"index":2,"text":"chunk 2"}
+3 events · 84 B · first 340ms · total 2.90s · 1.0 events/s
+```
+
+Events go to **stdout**, the closing summary to **stderr**, so a pipe carries
+events and nothing else.
+
+| Flag | Effect |
+| ---- | ------ |
+| *(none)* | Automatic on `text/event-stream` |
+| `--stream` | Force it for a server that streams under another content type |
+| `--raw` | Print each frame as it arrived, comment lines included |
+| `-v` | Add each event's offset from the start of the request |
+
+`--raw` is for debugging the framing rather than the payload:
+
+```shell
+$ rq get api.example.com/events --raw
+: keepalive
+event: delta
+data: {"index":0,"text":"chunk 0"}
+```
+
+Keepalive comments are framing, not data. They are not rendered and not
+counted, but `--raw` still shows them.
+
+**`--timeout` means something different for a stream.** It bounds connecting
+and the response headers only — not the life of the stream, which would
+otherwise be cut off after 30s by default. A buffered response is still bounded
+end to end.
+
+Press Ctrl-C to stop. Whatever arrived is kept, the summary is still printed,
+and the exit code is 130.
 
 ### Exit codes
 
@@ -486,6 +674,26 @@ $ make test     # unit and integration tests, no network needed
 $ make smoke    # end-to-end run of the real binary against a local fixture
 $ make server   # start the fixture server for manual testing
 ```
+
+## Releasing
+
+Pushing a `v*` tag runs the [Release workflow](.github/workflows/release.yml):
+it checks the tag against `core.Version`, runs vet, tests and the smoke suite,
+builds all six platform archives, and opens a **draft** release with them
+attached. Write the upgrade notes there, then publish.
+
+```shell
+$ make release              # rehearse locally; writes dist/
+$ VERSION=1.3.0 make release
+```
+
+Before tagging, bump `core.Version` in `core/request.go` to match. The workflow
+refuses a tag that disagrees with it, because `go install` applies no link
+flags — a module-path install reports whatever the source says.
+
+The archives are byte-reproducible: same tag, same toolchain, same checksums.
+To audit a published release rather than trust it, check the tag out, run
+`make release`, and compare `dist/SHA256SUMS` against the one attached to it.
 
 ## Technologies Used
 

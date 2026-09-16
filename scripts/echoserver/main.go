@@ -1,9 +1,10 @@
-// Command echoserver is a local fixture for exercising requestCLI by hand.
+// Command echoserver is a local fixture for exercising rq by hand.
 //
 // It echoes back whatever it received and exposes endpoints for redirects,
-// compression, auth, slow responses and arbitrary status codes. It serves both
-// plain HTTP and HTTPS (with a self-signed certificate) so the TLS behaviour of
-// the client can be tested without touching the network.
+// compression, auth, slow responses, server-sent events and arbitrary status
+// codes. It serves both plain HTTP and HTTPS (with a self-signed certificate)
+// so the TLS behaviour of the client can be tested without touching the
+// network.
 //
 //	go run ./scripts/echoserver
 //
@@ -49,6 +50,7 @@ func main() {
 	mux.HandleFunc("/redirect", redirect)
 	mux.HandleFunc("/moved", moved)
 	mux.HandleFunc("/slow", slow)
+	mux.HandleFunc("/sse", serveSSE)
 	mux.HandleFunc("/status/", status)
 	mux.HandleFunc("/basic-auth", basicAuth)
 	mux.HandleFunc("/multipart", multipartEcho)
@@ -339,4 +341,114 @@ func selfSignedCert() (tls.Certificate, error) {
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
 
 	return tls.X509KeyPair(certPEM, keyPEM)
+}
+
+// serveSSE streams server-sent events.
+//
+// Query parameters:
+//
+//	events=N     how many events to send (default 3, capped at 100)
+//	delay=Nms    pause between events (default 10ms, capped at 5s)
+//	keepalive=1  send a comment frame before the events, which a client must
+//	             not render as an empty event
+//	noterm=1     omit the blank line after the final event, so a client can be
+//	             checked against a stream that is cut short
+//	gzip=1       gzip-encode the stream, flushing per frame so it stays
+//	             incremental
+//	name=NAME    use NAME for the event: field (default "delta"); name= sends
+//	             frames with no event: field at all
+func serveSSE(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	query := r.URL.Query()
+
+	count := 3
+	if n, err := strconv.Atoi(query.Get("events")); err == nil && n >= 0 {
+		count = min(n, 100)
+	}
+
+	delay := 10 * time.Millisecond
+	if d, err := time.ParseDuration(query.Get("delay")); err == nil && d >= 0 {
+		delay = min(d, 5*time.Second)
+	}
+
+	name := "delta"
+	if query.Has("name") {
+		name = query.Get("name")
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+
+	// Content-Encoding has to be set before the status line goes out.
+	gzipped := query.Get("gzip") == "1"
+	if gzipped {
+		w.Header().Set("Content-Encoding", "gzip")
+	}
+	w.WriteHeader(http.StatusOK)
+
+	// out is where frames are written: the response directly, or through a
+	// gzip writer. Both are flushed per frame — flushing only the
+	// ResponseWriter would leave frames sitting in the compressor, and the
+	// stream would stop being incremental, which is the one property the
+	// client's tests are checking for.
+	out := io.Writer(w)
+	flush := func() { flusher.Flush() }
+
+	if gzipped {
+		gz := gzip.NewWriter(w)
+		defer func() {
+			if err := gz.Close(); err != nil {
+				log.Printf("closing sse gzip writer: %v", err)
+			}
+		}()
+		out = gz
+		flush = func() {
+			if err := gz.Flush(); err != nil {
+				log.Printf("flushing sse gzip writer: %v", err)
+			}
+			flusher.Flush()
+		}
+	}
+
+	if query.Get("keepalive") == "1" {
+		if _, err := io.WriteString(out, ": keepalive\n\n"); err != nil {
+			return
+		}
+		flush()
+	}
+
+	for i := range count {
+		// A JSON payload, because that is what a real event stream carries and
+		// it exercises the renderer's compaction path.
+		data := fmt.Sprintf(`{"index":%d,"text":"chunk %d"}`, i, i)
+
+		var frame string
+		if name != "" {
+			frame = fmt.Sprintf("event: %s\n", name)
+		}
+		frame += fmt.Sprintf("data: %s\n", data)
+
+		last := i == count-1
+		if !last || query.Get("noterm") != "1" {
+			frame += "\n"
+		}
+
+		if _, err := io.WriteString(out, frame); err != nil {
+			return
+		}
+		flush()
+
+		if !last {
+			select {
+			case <-time.After(delay):
+			case <-r.Context().Done():
+				return
+			}
+		}
+	}
 }

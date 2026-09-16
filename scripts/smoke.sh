@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# End-to-end smoke test for requestCLI.
+# End-to-end smoke test for rq.
 #
 # Builds the binary, starts the local echoserver fixture, runs every scenario
 # from TESTING.md and asserts on the output. Exits non-zero if anything fails.
@@ -12,7 +12,6 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 BIN="$WORK/rq"
-LEGACY_BIN="$WORK/requestCLI"
 HTTP="localhost:8080"
 HTTPS="https://localhost:8443"
 
@@ -58,15 +57,19 @@ check_not() {
 
 echo "==> Building"
 go build -o "$BIN" "$ROOT/cmd/rq" || exit 1
-ln -sf rq "$LEGACY_BIN"
 
 echo "==> Starting echoserver"
 # Refuse to run against a fixture we did not start. A stale server left over
 # from a previous run answers on the same ports with an older build, which
 # produces confidently wrong results rather than an obvious failure.
+#
+# The probe is wrapped in `timeout` because a closed port does not always
+# refuse the connection: WSL2 and hardened firewalls drop the SYN instead, so
+# an unguarded /dev/tcp probe blocks for the kernel's full connect timeout —
+# minutes before the suite even starts. A timeout exit means nothing answered,
+# which is exactly the free-port case.
 for port in 8080 8443; do
-  if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then
-    exec 3>&-
+  if timeout 1 bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null; then
     echo "port $port is already in use; stop the process holding it first" >&2
     exit 1
   fi
@@ -150,7 +153,7 @@ check "request really used TLS"         '"tls": true' "$BIN" get "$HTTPS/" -B -k
 
 echo
 echo "== Timeouts =="
-check "timeout is enforced" "Client.Timeout" \
+check "timeout is enforced" "timed out after 1s" \
   "$BIN" get "$HTTP/slow?seconds=5" --timeout 1s -S
 
 echo
@@ -175,11 +178,228 @@ check "-v shows the request line" "GET / HTTP/1.1"  "$BIN" get "$HTTP/" -v -S
 check "-v shows a request header" "Accept:"          "$BIN" get "$HTTP/" -v -S
 
 echo
-echo "== requestCLI rename =="
-check "requestCLI name prints deprecation notice" \
-  "requestCLI is deprecated and will be removed in the next release; use rq" \
-  "$LEGACY_BIN" get "$HTTP/" -S
-check "requestCLI name still works" "200 OK" "$LEGACY_BIN" get "$HTTP/" -S
+echo "== .http files =="
+HTTPFILE="$WORK/api.http"
+cat > "$HTTPFILE" <<HTTPDOC
+@base = http://$HTTP
+@who = body-value-ada
+@token = header-value-xyz
+
+### Create a user
+POST {{base}}/
+Content-Type: application/json
+X-Token: {{token}}
+
+{"name":"{{who}}"}
+
+### Health check
+GET {{base}}/json
+HTTPDOC
+
+check "runs every request in the file" '"name": "Mohamad"' "$BIN" run "$HTTPFILE" --http -B
+check "resolves a file variable in the url" '"path": "/"' "$BIN" run "$HTTPFILE" --name "Create a user" --http -B
+check "resolves a variable in a header" "header-value-xyz" \
+  "$BIN" run "$HTTPFILE" --name "Create a user" --http -B
+check "resolves a variable in the body" "body-value-ada" \
+  "$BIN" run "$HTTPFILE" --name "Create a user" --http -B
+check "--var overrides a file variable" "grace-override" \
+  "$BIN" run "$HTTPFILE" --name "Create a user" --var who=grace-override --http -B
+
+# Headings only exist to tell several responses apart, and they go to stderr so
+# a piped run carries bodies and nothing else.
+check_not "headings stay off stdout" "###" \
+  sh -c "$BIN run '$HTTPFILE' --http -B 2>/dev/null"
+
+# A typo in --name should be a one-step fix, not a hunt.
+check "an unknown --name lists what is available" "Health check" \
+  "$BIN" run "$HTTPFILE" --name nope --http -S
+
+# A body kept in its own file, which is how anyone holds a large payload
+# outside the request document.
+printf '{"marker":"body-from-file"}' > "$WORK/payload.json"
+printf 'POST http://%s/\nContent-Type: application/json\n\n< ./payload.json\n' "$HTTP" > "$WORK/bodyfile.http"
+check "reads a body from < ./file" "body-from-file" "$BIN" run "$WORK/bodyfile.http" --http -B
+
+# Errors must say where. file:line: is what an editor turns into a jump.
+printf 'GET http://%s/\nbad header line\n' "$HTTP" > "$WORK/broken.http"
+check "a parse error reports file:line:" "broken.http:2:" "$BIN" run "$WORK/broken.http" --http -S
+printf 'GET http://%s/{{missing}}\n' "$HTTP" > "$WORK/unknown.http"
+check "an unknown variable is named" "unknown variable {{missing}}" \
+  "$BIN" run "$WORK/unknown.http" --http -S
+
+# A sequence stops at the first failure rather than cascading.
+printf '### first\nGET http://%s/status/500\n\n### second\nGET http://%s/json\n' "$HTTP" "$HTTP" > "$WORK/failing.http"
+check_exit "--check-status stops at the first failure" 5 \
+  "$BIN" run "$WORK/failing.http" --http -S --check-status
+check_not "and does not run what follows" "Mohamad" \
+  "$BIN" run "$WORK/failing.http" --http -B --check-status
+
+echo
+echo "== Collections, environments and secrets =="
+COLL="$WORK/coll"
+mkdir -p "$COLL/environments" "$COLL/users"
+
+cat > "$COLL/rq.toml" <<TOMLDOC
+[defaults]
+base_url = "http://$HTTP"
+api_ver = "root-v1"
+
+[defaults.headers]
+X-Collection = "root-header"
+
+[defaults.auth]
+type  = "bearer"
+token = "{{secret:api_token}}"
+TOMLDOC
+
+printf 'base_url = "http://%s"\napi_ver = "staging-v2"\n' "$HTTP" > "$COLL/environments/staging.toml"
+printf 'api_token = "tok-from-secrets-file"\n' > "$COLL/.rq.secrets.toml"
+
+cat > "$COLL/users/rq.toml" <<TOMLDOC
+[defaults]
+api_ver = "nested-v1"
+
+[defaults.headers]
+X-Nested = "nested-header"
+TOMLDOC
+
+cat > "$COLL/users/list.http" <<HTTPDOC
+### List users
+# @var page = request-level-7
+GET {{base_url}}/?ver={{api_ver}}&page={{page}}
+HTTPDOC
+
+check "discovers the collection by walking up" "root-header" \
+  "$BIN" run "$COLL/users/list.http" --http -B
+check "merges headers down the chain" "nested-header" \
+  "$BIN" run "$COLL/users/list.http" --http -B
+
+# Scope 4 beats 3: the nested rq.toml is the more specific statement.
+check "a nested rq.toml overrides the root" "nested-v1" \
+  "$BIN" run "$COLL/users/list.http" --http -B
+# Scope 5 beats 4.
+check "--env overrides the collection" "staging-v2" \
+  "$BIN" run "$COLL/users/list.http" --env staging --http -B
+# Scope 7 resolves at all.
+check "a request-level @var resolves" "request-level-7" \
+  "$BIN" run "$COLL/users/list.http" --http -B
+# Scope 8 beats everything.
+check "--var beats the environment" "cli-wins" \
+  "$BIN" run "$COLL/users/list.http" --env staging --var api_ver=cli-wins --http -B
+
+# A secret referenced from inherited auth must actually resolve. Sending the
+# literal placeholder as a bearer token fails in a way that looks like a server
+# problem rather than a configuration one.
+check "an inherited {{secret:}} resolves onto the wire" "tok-from-secrets-file" \
+  "$BIN" run "$COLL/users/list.http" --http -B
+# ...but must not be printed back.
+check "a secret is masked in -v output" "Bearer ****" \
+  "$BIN" run "$COLL/users/list.http" --http -v -S
+check_not "the secret value is absent from -v output" "tok-from-secrets-file" \
+  "$BIN" run "$COLL/users/list.http" --http -v -S
+check "--show-secrets reveals it" "tok-from-secrets-file" \
+  "$BIN" run "$COLL/users/list.http" --http -v -S --show-secrets
+
+# Namespaces are not precedence levels.
+printf 'GET http://%s/\nX-Env: {{env:RQ_SMOKE_ENV}}\n' "$HTTP" > "$COLL/users/env.http"
+check "{{env:}} reads the process environment" "env-value" \
+  env RQ_SMOKE_ENV=env-value "$BIN" run "$COLL/users/env.http" --http -B
+
+# A secret with no entry in the file falls back to the environment, which is
+# the CI escape hatch.
+printf 'GET http://%s/\nX-Key: {{secret:RQ_SMOKE_SECRET}}\n' "$HTTP" > "$COLL/users/cisecret.http"
+check "a secret falls back to the environment" "ci-secret" \
+  env RQ_SMOKE_SECRET=ci-secret "$BIN" run "$COLL/users/cisecret.http" --http -B
+
+# Built-ins are generated, and two references in one request must agree or a
+# correlation id would be useless.
+printf 'GET http://%s/?a={{$uuid}}&b={{$uuid}}\n' "$HTTP" > "$COLL/users/uuid.http"
+check "a {{\$uuid}} is stable within one request" "PASS" sh -c \
+  "$BIN run '$COLL/users/uuid.http' --http -B | grep -o '\"[ab]\": \"[^\"]*\"' | sed 's/.*: //' | uniq | wc -l | grep -q '^1\$' && echo PASS"
+
+check "an unknown --env lists what exists" "staging" \
+  "$BIN" run "$COLL/users/list.http" --env nope --http -S
+
+echo
+echo "== rq vars =="
+check "reports a variable and its origin" "nested-v1" "$BIN" vars "$COLL/users/list.http"
+check "names the file a value came from" "users/rq.toml" "$BIN" vars "$COLL/users/list.http"
+check "reports inherited secrets too" "secret:api_token" "$BIN" vars "$COLL/users/list.http"
+check "masks a secret by default" "****" "$BIN" vars "$COLL/users/list.http"
+check_not "and does not print its value" "tok-from-secrets-file" "$BIN" vars "$COLL/users/list.http"
+check "--show-secrets reveals it" "tok-from-secrets-file" \
+  "$BIN" vars "$COLL/users/list.http" --show-secrets
+check "--env changes the reported origin" "staging.toml" \
+  "$BIN" vars "$COLL/users/list.http" --env staging
+printf 'GET http://%s/{{nowhere}}\n' "$HTTP" > "$COLL/users/undefined.http"
+check "an undefined variable is called out" "undefined" "$BIN" vars "$COLL/users/undefined.http"
+
+echo
+echo "== Streaming =="
+# text/event-stream is streamed without asking.
+check "sse is auto-detected" "delta" "$BIN" get "$HTTP/sse?events=2" --http -B
+check "sse event data is rendered" '"index":0' "$BIN" get "$HTTP/sse?events=2" --http -B
+check "sse summary counts events" "2 events" "$BIN" get "$HTTP/sse?events=2" --http -B
+
+# The summary goes to stderr so a pipe carries only events.
+check_not "sse summary stays off stdout" "events ·" \
+  sh -c "$BIN get '$HTTP/sse?events=2' --http -B 2>/dev/null"
+
+# A keepalive comment is framing, not an event: it must not print a blank line
+# and must not be counted.
+check "sse keepalives are not counted" "2 events" \
+  "$BIN" get "$HTTP/sse?events=2&keepalive=1" --http -B
+check_not "sse keepalives are not rendered" ": keepalive" \
+  "$BIN" get "$HTTP/sse?events=2&keepalive=1" --http -B
+
+# --raw exists to show framing, so it must show what the parsed view hides.
+check "sse --raw shows keepalive frames" ": keepalive" \
+  "$BIN" get "$HTTP/sse?events=2&keepalive=1" --http -B --raw
+check "sse --raw shows the data field" "data: " \
+  "$BIN" get "$HTTP/sse?events=1" --http -B --raw
+check_not "sse --raw drops the parsed marker" "●" \
+  "$BIN" get "$HTTP/sse?events=1" --http -B --raw
+
+# A stream cut off without its final blank line still shows the last frame.
+check "sse shows an unterminated final frame" '"index":1' \
+  "$BIN" get "$HTTP/sse?events=2&noterm=1" --http -B
+
+# A gzip-encoded stream must decode. The incremental half of that claim is
+# pinned by a unit test that holds the stream open; here we check the bytes
+# come out right end to end.
+check "sse decodes a gzipped stream" '"index":1' \
+  "$BIN" get "$HTTP/sse?events=2&gzip=1" --http -B
+check "sse gzipped stream is announced as such" "gzip" \
+  "$BIN" get "$HTTP/sse?events=1&gzip=1" --http -H
+
+# A frame with no event: field is "message" per the spec.
+check "sse names an unnamed frame message" "message" \
+  "$BIN" get "$HTTP/sse?events=1&name=" --http -B
+check "sse passes a custom event name through" "content_block_delta" \
+  "$BIN" get "$HTTP/sse?events=1&name=content_block_delta" --http -B
+
+# --stream forces incremental rendering for a server that does not advertise
+# the content type.
+check "--stream forces streaming on any content type" "message" \
+  "$BIN" get "$HTTP/text" --http -B --stream
+
+# -v adds each event's offset from the start of the request.
+#
+# Two events with a delay, not one: a single event can land in under a
+# millisecond, and formatDuration then renders it as microseconds. Asserting on
+# "ms" against one event is a bet on the machine being slow, which CI lost. The
+# second event here cannot arrive before the delay has passed.
+check "-v adds per-event timing" "ms" \
+  "$BIN" get "$HTTP/sse?events=2&delay=60ms" --http -B -v
+
+# The status line still comes from the same renderer as a buffered response.
+check "sse still prints a status line" "200 OK" "$BIN" get "$HTTP/sse?events=1" --http -S
+
+# The regression this whole change exists to prevent: --timeout must bound the
+# headers, not the life of the stream. A 1s timeout across a ~1.2s stream used
+# to kill it at 1s.
+check "--timeout does not kill a longer stream" "3 events" \
+  "$BIN" get "$HTTP/sse?events=3&delay=400ms" --http -B --timeout 1s
 
 echo
 echo "== Error handling =="

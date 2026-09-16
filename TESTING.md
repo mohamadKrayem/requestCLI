@@ -59,8 +59,7 @@ Build the CLI in another:
 $ make build
 ```
 
-`make build` produces `rq` and a `requestCLI` symlink beside it — the
-scenarios below use `rq`.
+`make build` produces `rq`, which the scenarios below use.
 
 The catch-all endpoint echoes your request back as JSON, so you can see exactly
 what was sent. Available endpoints:
@@ -75,6 +74,7 @@ what was sent. Available endpoints:
 | `/deflate`       | deflate-encoded JSON                        |
 | `/redirect`      | 302 to `/moved`                             |
 | `/slow?seconds=5`| Sleeps before responding                    |
+| `/sse`           | Streams server-sent events. See Scenario U for its query parameters |
 | `/status/<code>` | Returns that status code                    |
 | `/basic-auth`    | Requires Basic Auth                         |
 | `/multipart`     | Parses a multipart form and reports it      |
@@ -549,6 +549,95 @@ HTTP/1.1 200 OK
 `-v` shows the request that was actually sent — including headers filled in by
 defaults — followed by a blank line and the response, on stdout.
 
+### Scenario U — streaming and server-sent events
+
+The fixture's `/sse` endpoint streams events:
+
+| Parameter | Effect |
+| --------- | ------ |
+| `events=N` | how many events to send (default 3, max 100) |
+| `delay=D` | pause between events (default 10ms, max 5s) |
+| `keepalive=1` | prepend a comment frame, which must not render as an event |
+| `noterm=1` | omit the blank line after the final event |
+| `gzip=1` | gzip-encode the stream, flushed per frame |
+| `name=NAME` | set the `event:` field; `name=` sends frames with none |
+
+```shell
+$ ./rq get "localhost:8080/sse?events=3" --http -B
+● delta  {"index":0,"text":"chunk 0"}
+● delta  {"index":1,"text":"chunk 1"}
+● delta  {"index":2,"text":"chunk 2"}
+3 events · 84 B · first 2ms · total 22ms · 131.3 events/s
+```
+
+Confirm it is genuinely incremental rather than buffered — the offsets should
+step by roughly the delay, not all land together:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=4&delay=300ms" --http -B -v
+● delta 1ms  {"index":0,"text":"chunk 0"}
+● delta 302ms  {"index":1,"text":"chunk 1"}
+● delta 603ms  {"index":2,"text":"chunk 2"}
+● delta 904ms  {"index":3,"text":"chunk 3"}
+```
+
+Keepalives are framing, so they are neither rendered nor counted — but `--raw`
+shows them:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=2&keepalive=1" --http -B --raw
+: keepalive
+event: delta
+data: {"index":0,"text":"chunk 0"}
+event: delta
+data: {"index":1,"text":"chunk 1"}
+```
+
+The summary is on stderr, so a pipe sees only events:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=2" --http -B 2>/dev/null
+● delta  {"index":0,"text":"chunk 0"}
+● delta  {"index":1,"text":"chunk 1"}
+```
+
+`--timeout` bounds the headers, not the stream. This must print all three
+events and take about 1.2s, not stop after one second:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=3&delay=400ms" --http -B --timeout 1s
+```
+
+A gzip-encoded stream must decode *and* stay incremental — the offsets should
+still step by the delay rather than arriving together. A compressor that is not
+flushed per frame would hold them back:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=4&delay=300ms&gzip=1" --http -B -v
+● delta 2ms  {"index":0,"text":"chunk 0"}
+● delta 303ms  {"index":1,"text":"chunk 1"}
+● delta 604ms  {"index":2,"text":"chunk 2"}
+● delta 904ms  {"index":3,"text":"chunk 3"}
+```
+
+A frame with no `event:` field is named `message`, per the SSE spec:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=2&name=" --http -B
+● message  {"index":0,"text":"chunk 0"}
+● message  {"index":1,"text":"chunk 1"}
+```
+
+Ctrl-C keeps what arrived, prints the summary, and exits 130:
+
+```shell
+$ ./rq get "localhost:8080/sse?events=50&delay=200ms" --http -B
+^C
+5 events · 140 B · first 1ms · total 988ms · 5.1 events/s
+$ echo $?
+130
+```
+
 ### Scenario S — --check-status and exit codes
 
 ```shell
@@ -557,18 +646,6 @@ $ ./rq get localhost:8080/status/500 --check-status; echo $?    # 5
 $ ./rq get localhost:8080/redirect --check-status; echo $?      # 3 (not followed)
 $ ./rq get 127.0.0.1:1 --http --check-status; echo $?           # 2 (transport failure)
 $ ./rq get localhost:8080/status/404; echo $?                   # 0 — without the flag, still 0
-```
-
-### Scenario T — the rename
-
-`rq` is the current binary name. `requestCLI` still works as a symlink for one
-release, and warns:
-
-```shell
-$ ./requestCLI get localhost:8080/ -S
-requestCLI is deprecated and will be removed in the next release; use rq
-
-HTTP/1.1 200 OK
 ```
 
 ---

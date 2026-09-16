@@ -51,8 +51,6 @@ check "runs as a non-root user" "uid=10001" \
   "${COMPOSE[@]}" run --rm -T --entrypoint id rq
 check "ca-certificates present for default TLS verification" "ca-certificates.crt" \
   "${COMPOSE[@]}" run --rm -T --entrypoint ls rq /etc/ssl/certs/
-check "requestCLI alias still resolves" "deprecated" \
-  "${COMPOSE[@]}" run --rm -T --entrypoint requestCLI rq get echoserver:8080/ --http -S
 
 echo
 echo "== Requests against the fixture server =="

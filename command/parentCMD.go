@@ -3,12 +3,15 @@ package command
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	auth "github.com/mohamadkrayem/requestCLI/authentication"
@@ -66,7 +69,34 @@ type Options struct {
 	Form      bool
 	Multipart bool
 	Redirect  bool
+
+	// Stream forces incremental rendering. A text/event-stream response is
+	// streamed either way; this is for a server that streams under another
+	// content type.
+	Stream bool
+	// Raw prints each event as the frame it arrived in, comments included,
+	// instead of as a parsed event.
+	Raw bool
+
+	// Vars holds --var name=value definitions for a .http file run. They are
+	// raw strings so an invalid one can be reported with the text the user
+	// typed.
+	Vars []string
+	// RequestName selects a single named request from a .http file. Empty
+	// runs every request in the file.
+	RequestName string
+	// Environment names an environments/<name>.toml to layer in.
+	Environment string
+	// ShowSecrets stops {{secret:...}} values being masked in displayed
+	// output. Off by default: a tool that prints a bearer token into a
+	// snapshot that then gets committed has actively made things worse.
+	ShowSecrets bool
 }
+
+// interruptExitCode is the conventional 128 + SIGINT. A stream is normally
+// ended by the user rather than the server, so this is the ordinary way out of
+// one, not an error.
+const interruptExitCode = 130
 
 // ExitError carries a specific process exit code. Err is nil when the failure
 // is only an HTTP status, in which case nothing extra is printed to stderr —
@@ -121,6 +151,7 @@ func Run(method string, args []string, opts *Options) error {
 		Redirect: opts.Redirect,
 		Insecure: opts.Insecure,
 		Timeout:  opts.Timeout,
+		Stream:   opts.Stream,
 	})
 	if err != nil {
 		// A transport failure (DNS, connect, TLS, timeout) gets its own exit
@@ -133,18 +164,93 @@ func Run(method string, args []string, opts *Options) error {
 		return err
 	}
 
+	// A streamed result holds an open connection; Close is a no-op on a
+	// buffered one, so this is unconditional.
+	defer func() { _ = result.Close() }()
+
 	// Colour is resolved here, once, and passed down. No renderer decides for
 	// itself whether it is talking to a terminal.
-	fmt.Println(render.Render(result, render.Options{
+	renderOpts := render.Options{
 		ShowStatus:  opts.ShowStatus,
 		ShowHeaders: opts.ShowHeaders,
 		ShowBody:    opts.ShowBody,
 		ShowRequest: opts.Verbose,
 		Color:       render.ColorEnabled(os.Stdout),
 		Style:       opts.Style,
-	}))
+		Raw:         opts.Raw,
+		// -v means "more detail"; on a stream the detail worth adding is when
+		// each frame landed, which is the number anyone measuring a model API
+		// is after.
+		ShowEventTiming: opts.Verbose,
+	}
+
+	if result.Stream != nil {
+		return streamResult(result, opts, renderOpts)
+	}
+
+	fmt.Println(render.Render(result, renderOpts))
 
 	return checkStatus(result, opts)
+}
+
+// streamResult renders a response incrementally, event by event.
+//
+// The status line and headers are printed first from the same Render call the
+// buffered path uses — the body section comes out empty, because a streamed
+// Result has no body — and then each event is printed as it arrives. Nothing
+// here buffers: that is the entire point.
+func streamResult(result *core.Result, opts *Options, renderOpts render.Options) error {
+	if header := render.Render(result, renderOpts); header != "" {
+		fmt.Println(header)
+	}
+
+	// Stream.Next is parked in a blocking read between frames, and a context
+	// cannot interrupt that. Closing the result cancels the request, which
+	// unblocks the read — so the signal handler closes, and the loop below
+	// treats the resulting error as the end of the stream.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		_ = result.Close()
+	}()
+
+	// Written straight to os.Stdout, unbuffered. Wrapping it in a bufio.Writer
+	// would hold frames back until 4 KB accumulated, making a slow stream look
+	// stalled — the exact failure a streaming client exists to rule out.
+	for {
+		event, err := result.Stream.Next()
+		if err != nil {
+			if !errors.Is(err, io.EOF) && ctx.Err() == nil {
+				// A genuine mid-stream failure. The frames already printed are
+				// the evidence, so the summary still goes out.
+				summariseStream(result, renderOpts)
+				return &ExitError{Code: 2, Err: fmt.Errorf("reading event stream: %w", err)}
+			}
+			break
+		}
+
+		// A keepalive renders as an empty string unless --raw asked for the
+		// frames; printing it would put a blank line in the stream every time
+		// the server pinged.
+		if line := render.Event(event, renderOpts); line != "" {
+			fmt.Println(line)
+		}
+	}
+
+	summariseStream(result, renderOpts)
+
+	if ctx.Err() != nil {
+		return &ExitError{Code: interruptExitCode}
+	}
+
+	return checkStatus(result, opts)
+}
+
+// summariseStream prints the closing line on stderr, so piping the stream into
+// a parser yields events and nothing else.
+func summariseStream(result *core.Result, renderOpts render.Options) {
+	fmt.Fprintln(os.Stderr, render.StreamSummary(result.Stream.Stats(), renderOpts))
 }
 
 // buildRequest assembles the request up to (but not including) the items and
