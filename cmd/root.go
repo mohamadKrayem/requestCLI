@@ -128,11 +128,41 @@ single named request, and --var to supply a {{variable}}.`,
 	}
 
 	cmd.Flags().StringVar(&opts.RequestName, "name", "", "Send only the request with this name.")
+	addVariableFlags(cmd)
+
+	return cmd
+}
+
+// newVarsCmd builds `rq vars`, which reports what every {{variable}} in a file
+// resolves to and where the value came from.
+func newVarsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "vars FILE [flags]",
+		Short: "Show what each {{variable}} in a .http file resolves to, and from where.",
+		Long: `Show what each {{variable}} in a .http file resolves to, and from where.
+
+Modelled on ` + "`git config --list --show-origin`" + `. Secrets are masked unless
+--show-secrets is passed, and a variable nothing defines is reported as
+undefined rather than silently failing at send time.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return command.Vars(args[0], opts)
+		},
+	}
+
+	addVariableFlags(cmd)
+	return cmd
+}
+
+// addVariableFlags registers the flags that select and supply variables. They
+// are shared so `run` and `vars` resolve identically — a `vars` report that
+// did not match what `run` would send would be worse than no report.
+func addVariableFlags(cmd *cobra.Command) {
 	// A repeatable flag rather than a map: StringToString splits on commas,
 	// which would corrupt any value containing one.
 	cmd.Flags().StringArrayVar(&opts.Vars, "var", nil, "Set a {{variable}}, as name=value. Repeatable.")
-
-	return cmd
+	cmd.Flags().StringVar(&opts.Environment, "env", "", "Layer in environments/<name>.toml from the collection.")
+	cmd.Flags().BoolVar(&opts.ShowSecrets, "show-secrets", false, "Show {{secret:...}} values instead of masking them.")
 }
 
 func init() {
@@ -185,4 +215,5 @@ func init() {
 	}
 
 	rootCmd.AddCommand(newRunCmd())
+	rootCmd.AddCommand(newVarsCmd())
 }

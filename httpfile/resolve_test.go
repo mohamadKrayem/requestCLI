@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -126,14 +127,14 @@ func TestResolveSubstitutesThroughoutARequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if got.URL != "https://example.com/users" {
-		t.Errorf("URL = %q", got.URL)
+	if got.Request.URL != "https://example.com/users" {
+		t.Errorf("URL = %q", got.Request.URL)
 	}
-	if got.Headers[0].Value != "Bearer abc" {
-		t.Errorf("header = %q", got.Headers[0].Value)
+	if got.Request.Headers[0].Value != "Bearer abc" {
+		t.Errorf("header = %q", got.Request.Headers[0].Value)
 	}
-	if string(got.Body) != `{"name":"ada"}` {
-		t.Errorf("Body = %q", got.Body)
+	if string(got.Request.Body) != `{"name":"ada"}` {
+		t.Errorf("Body = %q", got.Request.Body)
 	}
 }
 
@@ -168,8 +169,8 @@ func TestResolveReadsABodyFileRelativeToTheDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if string(got.Body) != `{"from":"file"}` {
-		t.Errorf("Body = %q", got.Body)
+	if string(got.Request.Body) != `{"from":"file"}` {
+		t.Errorf("Body = %q", got.Request.Body)
 	}
 }
 
@@ -234,5 +235,182 @@ func TestParseVarFlag(t *testing.T) {
 		if _, _, err := ParseVarFlag(bad); err == nil {
 			t.Errorf("ParseVarFlag(%q) should have failed", bad)
 		}
+	}
+}
+
+// A namespaced reference resolves only from its namespace, never from the
+// ordinary chain. This is the property that stops a secret silently shadowing
+// an ordinary variable — the failure mode the whole design exists to prevent.
+func TestNamespacesAreNotPrecedenceLevels(t *testing.T) {
+	r := Resolver{
+		Sources: []Source{MapSource{Values: map[string]string{"token": "ordinary"}, Label: "file"}},
+		Namespaces: map[string]Source{
+			SecretNamespace: MapSource{Values: map[string]string{"token": "s3cret"}, Label: ".rq.secrets.toml"},
+		},
+	}
+
+	ordinary, ok := r.Lookup("token")
+	if !ok || ordinary.Value != "ordinary" {
+		t.Errorf("{{token}} = %+v, want the ordinary value", ordinary)
+	}
+	if ordinary.Secret {
+		t.Error("an ordinary variable was marked secret")
+	}
+
+	secret, ok := r.Lookup("secret:token")
+	if !ok || secret.Value != "s3cret" {
+		t.Errorf("{{secret:token}} = %+v, want the secret value", secret)
+	}
+	if !secret.Secret {
+		t.Error("a secret was not marked as one")
+	}
+}
+
+// An unknown namespace is not silently treated as an ordinary variable.
+func TestUnknownNamespaceIsNotResolved(t *testing.T) {
+	r := Resolver{Sources: []Source{MapSource{Values: map[string]string{"nope:x": "leaked"}, Label: "file"}}}
+
+	if _, ok := r.Lookup("nope:x"); ok {
+		t.Error("a namespaced reference matched an ordinary variable")
+	}
+}
+
+func TestEnvNamespaceReadsTheProcessEnvironment(t *testing.T) {
+	t.Setenv("RQ_TEST_ENV_VAR", "from-env")
+	r := Resolver{Namespaces: map[string]Source{EnvNamespace: EnvSource{}}}
+
+	got, err := r.Expand("{{env:RQ_TEST_ENV_VAR}}", 1)
+	if err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
+	if got != "from-env" {
+		t.Errorf("Expand = %q", got)
+	}
+}
+
+func TestDynamicVariablesAreGenerated(t *testing.T) {
+	r := Resolver{}
+
+	uuid, err := r.Expand("{{$uuid}}", 1)
+	if err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
+	if len(uuid) != 36 || strings.Count(uuid, "-") != 4 {
+		t.Errorf("$uuid = %q, want a canonical uuid", uuid)
+	}
+	// Version 4, variant 10.
+	if uuid[14] != '4' {
+		t.Errorf("$uuid = %q, want version 4", uuid)
+	}
+	if !strings.ContainsRune("89ab", rune(uuid[19])) {
+		t.Errorf("$uuid = %q, want the RFC variant bits", uuid)
+	}
+
+	timestamp, err := r.Expand("{{$timestamp}}", 1)
+	if err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
+	if _, err := strconv.ParseInt(timestamp, 10, 64); err != nil {
+		t.Errorf("$timestamp = %q, want an integer", timestamp)
+	}
+
+	if _, err := r.Expand("{{$randomInt}}", 1); err != nil {
+		t.Errorf("$randomInt: %v", err)
+	}
+}
+
+// Two references to the same built-in in one request must agree. A correlation
+// id that differed between a header and the body it labels would be worse than
+// useless.
+func TestDynamicVariablesAreStableWithinARequest(t *testing.T) {
+	r := Resolver{}
+	request := Request{
+		URL:     "https://example.com/{{$uuid}}",
+		Headers: []Header{{Name: "X-Request-Id", Value: "{{$uuid}}"}},
+	}
+
+	got, err := r.Resolve(request, "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	fromURL := strings.TrimPrefix(got.Request.URL, "https://example.com/")
+	if fromURL != got.Request.Headers[0].Value {
+		t.Errorf("two {{$uuid}} in one request disagreed: %q and %q", fromURL, got.Request.Headers[0].Value)
+	}
+}
+
+// ...but differ between requests, or they would not be identifiers.
+func TestDynamicVariablesDifferBetweenRequests(t *testing.T) {
+	r := Resolver{}
+	request := Request{URL: "{{$uuid}}"}
+
+	first, _ := r.Resolve(request, "", "")
+	second, _ := r.Resolve(request, "", "")
+
+	if first.Request.URL == second.Request.URL {
+		t.Error("two requests got the same {{$uuid}}")
+	}
+}
+
+func TestUnknownDynamicVariableIsReported(t *testing.T) {
+	r := Resolver{}
+
+	if _, err := r.Expand("{{$nonsense}}", 3); err == nil {
+		t.Fatal("expected an error for an unknown built-in")
+	}
+}
+
+// Resolve reports the secret values it substituted, so output can mask them.
+func TestResolveReportsSubstitutedSecrets(t *testing.T) {
+	r := Resolver{
+		Namespaces: map[string]Source{
+			SecretNamespace: MapSource{Values: map[string]string{"token": "s3cret-value"}, Label: "secrets"},
+		},
+	}
+	request := Request{
+		URL:     "https://example.com/",
+		Headers: []Header{{Name: "Authorization", Value: "Bearer {{secret:token}}"}},
+	}
+
+	got, err := r.Resolve(request, "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(got.Secrets) != 1 || got.Secrets[0] != "s3cret-value" {
+		t.Errorf("Secrets = %v, want the substituted value", got.Secrets)
+	}
+}
+
+// A committed request resolving from a machine-local scope is a
+// reproducibility footgun: it works here and fails for a teammate. Resolve
+// reports it so the caller can warn.
+func TestResolveReportsSystemScopedVariables(t *testing.T) {
+	r := Resolver{Sources: []Source{
+		MapSource{Values: map[string]string{"host": "localhost"}, Label: "~/.config/rq/vars.toml", System: true},
+	}}
+
+	got, err := r.Resolve(Request{URL: "http://{{host}}/"}, "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(got.SystemScoped) != 1 || got.SystemScoped[0] != "host" {
+		t.Errorf("SystemScoped = %v, want [host]", got.SystemScoped)
+	}
+}
+
+// A variable that came from a committed scope must not be reported as
+// system-scoped, or the warning becomes noise people ignore.
+func TestNonSystemVariablesAreNotFlagged(t *testing.T) {
+	r := Resolver{Sources: []Source{
+		MapSource{Values: map[string]string{"host": "example.com"}, Label: "rq.toml"},
+	}}
+
+	got, err := r.Resolve(Request{URL: "http://{{host}}/"}, "", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got.SystemScoped != nil {
+		t.Errorf("SystemScoped = %v, want none", got.SystemScoped)
 	}
 }

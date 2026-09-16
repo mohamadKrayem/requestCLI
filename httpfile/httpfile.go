@@ -48,6 +48,10 @@ type Request struct {
 	Headers []Header
 	Body    []byte
 
+	// Vars are request-level "# @var name = value" definitions. They sit one
+	// step above file-level vars in precedence and below the command line.
+	Vars []Var
+
 	// BodyFile is set when the body was written as "< ./path", in which case
 	// Body is empty until the file is read. The path is relative to the .http
 	// file, matching every other client that reads this dialect.
@@ -167,6 +171,9 @@ type parser struct {
 	// pendingName is a name taken from a "### name" separator, applied to the
 	// next request line encountered.
 	pendingName string
+	// pendingVars holds "# @var" definitions written above the request line
+	// they belong to, which is where they naturally go.
+	pendingVars []Var
 	body        []string
 	state       section
 }
@@ -259,8 +266,10 @@ func (p *parser) startRequest(line string) error {
 		Method: method,
 		URL:    url,
 		Line:   p.line,
+		Vars:   p.pendingVars,
 	}
 	p.pendingName = ""
+	p.pendingVars = nil
 	p.state = inHeaders
 	return nil
 }
@@ -319,11 +328,15 @@ type directive struct {
 	value string
 }
 
-// parseDirective recognises "@name = value" and "# @name value".
+// parseDirective recognises "@name = value", "@name value" and "# @name value".
+//
+// The key is the first token, and everything after it is the value with one
+// optional "=" removed. Splitting on "=" first would break "@var token = abc",
+// whose key is "var" and whose value is itself a name/value pair.
 func parseDirective(trimmed string) (directive, bool) {
 	body := trimmed
 	// A directive may be written inside a comment, which is how request-level
-	// annotations stay readable to other clients.
+	// annotations stay readable to clients that do not understand them.
 	for _, prefix := range []string{"#", "//"} {
 		if stripped, ok := strings.CutPrefix(body, prefix); ok {
 			body = strings.TrimSpace(stripped)
@@ -336,15 +349,24 @@ func parseDirective(trimmed string) (directive, bool) {
 		return directive{}, false
 	}
 
-	// Both "@name = value" and "@name value" appear in the wild.
-	key, value, found := strings.Cut(rest, "=")
-	if !found {
-		key, value, found = strings.Cut(rest, " ")
-		if !found {
-			return directive{key: strings.TrimSpace(rest)}, true
-		}
+	key := rest
+	value := ""
+	if i := strings.IndexAny(rest, " \t="); i >= 0 {
+		key = rest[:i]
+		value = strings.TrimSpace(rest[i:])
+		value = strings.TrimSpace(strings.TrimPrefix(value, "="))
 	}
-	return directive{key: strings.TrimSpace(key), value: strings.TrimSpace(value)}, true
+	return directive{key: strings.TrimSpace(key), value: value}, true
+}
+
+// splitAssignment splits a "name = value" pair, as written after "@var".
+func splitAssignment(s string) (name, value string, ok bool) {
+	name, value, found := strings.Cut(s, "=")
+	name = strings.TrimSpace(name)
+	if !found || name == "" {
+		return "", "", false
+	}
+	return name, strings.TrimSpace(value), true
 }
 
 // applyDirective handles the directives this slice understands and ignores the
@@ -365,10 +387,29 @@ func (p *parser) applyDirective(d directive) error {
 		return nil
 	}
 
-	// Any other @name is a file-level variable, but only before a request
-	// line: inside a request it is an annotation for a feature this slice
-	// does not implement, and silently treating it as a variable would be
-	// worse than ignoring it.
+	// "# @var name = value" is a request-level variable. It is spelled
+	// differently from a file-level "@name = value" because it appears among
+	// the request's other annotations, where a bare @name would read as one
+	// of them.
+	if strings.EqualFold(d.key, "var") {
+		name, value, ok := splitAssignment(d.value)
+		if !ok {
+			return &ParseError{Line: p.line, Msg: fmt.Sprintf("expected @var name = value, got %q", d.value)}
+		}
+		v := Var{Name: name, Value: value, Line: p.line}
+		if p.current != nil {
+			p.current.Vars = append(p.current.Vars, v)
+		} else {
+			// Before a request line it names the request that follows, which
+			// has not been created yet.
+			p.pendingVars = append(p.pendingVars, v)
+		}
+		return nil
+	}
+
+	// Any other @name before a request line is a file-level variable. Inside a
+	// request it is an annotation for something not implemented here, and
+	// ignoring it is what keeps the format extensible.
 	if p.state == betweenRequests {
 		p.file.Vars = append(p.file.Vars, Var{Name: d.key, Value: d.value, Line: p.line})
 	}

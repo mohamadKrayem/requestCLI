@@ -85,6 +85,12 @@ type Options struct {
 	// RequestName selects a single named request from a .http file. Empty
 	// runs every request in the file.
 	RequestName string
+	// Environment names an environments/<name>.toml to layer in.
+	Environment string
+	// ShowSecrets stops {{secret:...}} values being masked in displayed
+	// output. Off by default: a tool that prints a bearer token into a
+	// snapshot that then gets committed has actively made things worse.
+	ShowSecrets bool
 }
 
 // interruptExitCode is the conventional 128 + SIGINT. A stream is normally

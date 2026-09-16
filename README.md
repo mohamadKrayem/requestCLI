@@ -308,9 +308,95 @@ $ rq run api.http
 Error: api.http:7: unknown variable {{token}}
 ```
 
-> **Not yet implemented:** environments, collection directories with inherited
-> defaults, `{{secret:…}}`, `{{$uuid}}` and `rq vars`. A file using them will
-> report the variable as unknown rather than silently sending the wrong thing.
+### Collections
+
+A collection is a **directory** containing an `rq.toml`, found by walking up
+from the request file the way git finds `.git`. There is no manifest, no export
+step and no ids: adding a request means creating a file, and renaming one is
+`mv`.
+
+```
+api/
+├── rq.toml                  # defaults inherited by everything below
+├── environments/
+│   ├── dev.toml
+│   └── staging.toml
+├── .rq.secrets.toml         # gitignored, never committed
+└── users/
+    ├── rq.toml              # merges over the parent
+    └── list.http
+```
+
+```toml
+# api/rq.toml
+[defaults]
+base_url = "https://api.example.com"
+
+[defaults.headers]
+Accept = "application/json"
+
+[defaults.auth]
+type  = "bearer"
+token = "{{secret:api_token}}"
+```
+
+Set the base URL and auth once; write requests as `GET {{base_url}}/users`.
+Headers merge down the chain and a nested value wins. Auth is replaced
+wholesale, so a subdirectory switching from bearer to basic does not inherit
+half of what it replaced.
+
+### Variables
+
+Where a value comes from is part of the reference, so `{{token}}` is never
+ambiguous the way it is in a GUI client:
+
+| Reference | Resolves from |
+| --- | --- |
+| `{{base_url}}` | An ordinary variable, by the precedence below |
+| `{{secret:api_token}}` | `.rq.secrets.toml`, then the environment — never committed |
+| `{{env:HOME}}` | The process environment |
+| `{{$uuid}}`, `{{$timestamp}}`, `{{$randomInt}}` | Generated once per request |
+
+**Namespaces are not precedence levels.** A `{{secret:token}}` can never
+silently shadow an ordinary `{{token}}` — the failure mode that makes
+credential bugs hard to see.
+
+Ordinary variables resolve lowest to highest:
+
+| # | Scope | Lives in |
+| - | ----- | -------- |
+| 1 | Built-in | `{{$uuid}}` and friends |
+| 2 | System-wide | `~/.config/rq/vars.toml` — machine-local, warns when used |
+| 3 | Collection | `rq.toml` at the collection root |
+| 4 | Nested collection | `rq.toml` in a subdirectory |
+| 5 | Environment | `environments/<name>.toml`, via `--env` |
+| 6 | File | `@name = value` at the top of a `.http` file |
+| 7 | Request | `# @var name = value` above a request |
+| 8 | Command line | `--var name=value` |
+
+Resolving from the machine-local scope prints a warning: it works for you and
+fails for a teammate, which is a confusing thing to debug remotely.
+
+### `rq vars`
+
+```shell
+$ rq vars users/list.http --env staging
+$uuid            = (generated per request)  (built-in)
+api_ver          = staging-v2               (api/environments/staging.toml)
+base_url         = https://api.example.com  (api/rq.toml)
+page             = 7                        (api/users/list.http:3)
+secret:api_token = ****                     (api/.rq.secrets.toml)
+```
+
+Modelled on `git config --list --show-origin`. It reports variables referenced
+by inherited headers and auth as well as by the file, because those are what
+authenticate the request. Secrets are masked here and in `-v` output; pass
+`--show-secrets` to see them.
+
+> **Not yet implemented:** the OS keychain as a secret source, and
+> `{{login.response.body.token}}` references to an earlier request. A file
+> using either reports the variable as unknown rather than silently sending the
+> wrong thing.
 
 ### Streaming and server-sent events
 

@@ -13,6 +13,7 @@ cmd/rq/main.go      entry point
               ├── reqitem/  parses HTTPie-style positional request items
               │     └── input/           multipart form and file bodies
               ├── httpfile/ parses .http files and resolves {{variables}}
+              ├── collection/ discovers rq.toml directories, environments, secrets
               ├── core/     builds and sends the request -> Result
               │     ├── formats/         json validation for command-line input
               │     ├── input/           multipart form and file bodies
@@ -65,6 +66,19 @@ there are two (file-level `@vars`, then `--var`); the full model inserts system,
 collection, environment and request scopes between them without changing the
 resolution logic. `Source.Origin` names where a value came from, which is what
 `rq vars` will report.
+
+### collection/
+
+Discovers the directory a `.http` file lives in by walking up for an `rq.toml`,
+and assembles the scopes that apply: collection defaults, nested overrides,
+`environments/<name>.toml` and `.rq.secrets.toml`. It imports `httpfile` for
+the `Source` interface and a TOML decoder, and nothing else — configuration is
+not a transport concern, so it does not import `core` either.
+
+Configs are held root-first, so a nested `rq.toml` wins by being applied later
+rather than by merging maps. Headers merge down the chain; auth is replaced
+wholesale, because a subdirectory switching from bearer to basic must not
+inherit half of what it replaced.
 
 ### core/
 
@@ -355,3 +369,55 @@ a broken step produces a cascade that hides the real error.
 
 2026-09-12 — Print per-request headings on stderr, like the stream summary — a
 piped run must carry response bodies and nothing else.
+
+2026-09-16 — Make namespaces (`secret:`, `env:`, `$`) resolve outside the
+precedence chain rather than as scopes within it — a secret that can shadow an
+ordinary variable is the failure mode that makes credential bugs hard to see.
+Putting the origin in the reference is what removes the ambiguity, and it means
+`{{token}}` and `{{secret:token}}` are simply different variables.
+
+2026-09-16 — Discover a collection by walking up for `rq.toml`, git-style, with
+no manifest — adding a request is creating a file and renaming one is `mv`.
+A manifest listing every request is the thing that makes GUI clients painful to
+keep in a repository, and it buys nothing a directory walk does not.
+
+2026-09-16 — Hold collection configs root-first and let a nested one win by
+position — merging maps would make precedence implicit in the merge order,
+where a list makes it the order of the list and therefore reviewable.
+
+2026-09-16 — Merge inherited headers but replace inherited auth wholesale — a
+subdirectory that switches from bearer to basic must not keep the parent's
+token, which field-level merging would leave in place.
+
+2026-09-16 — Expand collection defaults through the same Expander as the
+request that inherits them — a `token = "{{secret:api_token}}"` sent literally
+fails in a way that looks like a server problem rather than a configuration
+one. Sharing one pass is also what makes a `{{$uuid}}` in an inherited header
+match the one in the body it labels, and what collects those secrets for
+masking.
+
+2026-09-16 — Cache built-ins per request, not per reference — two `{{$uuid}}`
+in one request must agree, or a correlation id spanning a header and a body is
+useless. They still differ between requests, or they would not be identifiers.
+
+2026-09-16 — Mask secrets in rendered request output rather than at the point of
+substitution — the request on the wire must carry the real credential while the
+one on the screen must not. Masking the finished text also catches a secret
+wherever it landed: a header, the query string or the body.
+
+2026-09-16 — Never mask a response body — it is what the server actually sent,
+and rewriting it would make the tool lie about the one thing it exists to
+report. Masking covers the request block and `rq vars` only.
+
+2026-09-16 — Warn, rather than refuse, when a committed request resolves from
+`~/.config/rq/vars.toml` — machine-local variables are genuinely convenient and
+genuinely a reproducibility footgun. Convenience without silent breakage.
+
+2026-09-16 — Report variables referenced by inherited headers and auth in
+`rq vars`, not only those in the file — an inherited auth token is what
+authenticates every request in the tree, and a report that omitted it would be
+exactly the report someone reaches for when auth is failing.
+
+2026-09-16 — Add BurntSushi/toml for rq.toml, environments and secrets — the
+format is specified as TOML and hand-rolling a parser for it would be a poor
+trade. It has no transitive dependencies.

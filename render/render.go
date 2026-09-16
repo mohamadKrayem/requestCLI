@@ -42,7 +42,42 @@ type Options struct {
 	// ShowEventTiming adds each event's offset from the start of the request.
 	// It affects Event only.
 	ShowEventTiming bool
+
+	// Mask holds literal values to redact from displayed output — resolved
+	// {{secret:...}} values. It applies to the request block only, never to a
+	// response body: the body is what the server actually sent, and rewriting
+	// it would make the tool lie about the one thing it exists to report.
+	Mask []string
 }
+
+// maskSecrets replaces every masked value with a fixed redaction.
+//
+// It works on the rendered text rather than at the point of substitution, so
+// the request that goes on the wire still carries the real credential while
+// the one that goes on the screen does not. Values are replaced longest first,
+// so a secret that contains another is not partly revealed by the shorter
+// one's replacement.
+func maskSecrets(text string, mask []string) string {
+	if len(mask) == 0 {
+		return text
+	}
+
+	ordered := make([]string, 0, len(mask))
+	for _, value := range mask {
+		if value != "" {
+			ordered = append(ordered, value)
+		}
+	}
+	sort.Slice(ordered, func(i, j int) bool { return len(ordered[i]) > len(ordered[j]) })
+
+	for _, value := range ordered {
+		text = strings.ReplaceAll(text, value, redaction)
+	}
+	return text
+}
+
+// redaction is what a masked secret is shown as.
+const redaction = "****"
 
 // DefaultStyle is used when Options.Style is empty.
 const DefaultStyle = "monokai"

@@ -235,6 +235,106 @@ check_not "and does not run what follows" "Mohamad" \
   "$BIN" run "$WORK/failing.http" --http -B --check-status
 
 echo
+echo "== Collections, environments and secrets =="
+COLL="$WORK/coll"
+mkdir -p "$COLL/environments" "$COLL/users"
+
+cat > "$COLL/rq.toml" <<TOMLDOC
+[defaults]
+base_url = "http://$HTTP"
+api_ver = "root-v1"
+
+[defaults.headers]
+X-Collection = "root-header"
+
+[defaults.auth]
+type  = "bearer"
+token = "{{secret:api_token}}"
+TOMLDOC
+
+printf 'base_url = "http://%s"\napi_ver = "staging-v2"\n' "$HTTP" > "$COLL/environments/staging.toml"
+printf 'api_token = "tok-from-secrets-file"\n' > "$COLL/.rq.secrets.toml"
+
+cat > "$COLL/users/rq.toml" <<TOMLDOC
+[defaults]
+api_ver = "nested-v1"
+
+[defaults.headers]
+X-Nested = "nested-header"
+TOMLDOC
+
+cat > "$COLL/users/list.http" <<HTTPDOC
+### List users
+# @var page = request-level-7
+GET {{base_url}}/?ver={{api_ver}}&page={{page}}
+HTTPDOC
+
+check "discovers the collection by walking up" "root-header" \
+  "$BIN" run "$COLL/users/list.http" --http -B
+check "merges headers down the chain" "nested-header" \
+  "$BIN" run "$COLL/users/list.http" --http -B
+
+# Scope 4 beats 3: the nested rq.toml is the more specific statement.
+check "a nested rq.toml overrides the root" "nested-v1" \
+  "$BIN" run "$COLL/users/list.http" --http -B
+# Scope 5 beats 4.
+check "--env overrides the collection" "staging-v2" \
+  "$BIN" run "$COLL/users/list.http" --env staging --http -B
+# Scope 7 resolves at all.
+check "a request-level @var resolves" "request-level-7" \
+  "$BIN" run "$COLL/users/list.http" --http -B
+# Scope 8 beats everything.
+check "--var beats the environment" "cli-wins" \
+  "$BIN" run "$COLL/users/list.http" --env staging --var api_ver=cli-wins --http -B
+
+# A secret referenced from inherited auth must actually resolve. Sending the
+# literal placeholder as a bearer token fails in a way that looks like a server
+# problem rather than a configuration one.
+check "an inherited {{secret:}} resolves onto the wire" "tok-from-secrets-file" \
+  "$BIN" run "$COLL/users/list.http" --http -B
+# ...but must not be printed back.
+check "a secret is masked in -v output" "Bearer ****" \
+  "$BIN" run "$COLL/users/list.http" --http -v -S
+check_not "the secret value is absent from -v output" "tok-from-secrets-file" \
+  "$BIN" run "$COLL/users/list.http" --http -v -S
+check "--show-secrets reveals it" "tok-from-secrets-file" \
+  "$BIN" run "$COLL/users/list.http" --http -v -S --show-secrets
+
+# Namespaces are not precedence levels.
+printf 'GET http://%s/\nX-Env: {{env:RQ_SMOKE_ENV}}\n' "$HTTP" > "$COLL/users/env.http"
+check "{{env:}} reads the process environment" "env-value" \
+  env RQ_SMOKE_ENV=env-value "$BIN" run "$COLL/users/env.http" --http -B
+
+# A secret with no entry in the file falls back to the environment, which is
+# the CI escape hatch.
+printf 'GET http://%s/\nX-Key: {{secret:RQ_SMOKE_SECRET}}\n' "$HTTP" > "$COLL/users/cisecret.http"
+check "a secret falls back to the environment" "ci-secret" \
+  env RQ_SMOKE_SECRET=ci-secret "$BIN" run "$COLL/users/cisecret.http" --http -B
+
+# Built-ins are generated, and two references in one request must agree or a
+# correlation id would be useless.
+printf 'GET http://%s/?a={{$uuid}}&b={{$uuid}}\n' "$HTTP" > "$COLL/users/uuid.http"
+check "a {{\$uuid}} is stable within one request" "PASS" sh -c \
+  "$BIN run '$COLL/users/uuid.http' --http -B | grep -o '\"[ab]\": \"[^\"]*\"' | sed 's/.*: //' | uniq | wc -l | grep -q '^1\$' && echo PASS"
+
+check "an unknown --env lists what exists" "staging" \
+  "$BIN" run "$COLL/users/list.http" --env nope --http -S
+
+echo
+echo "== rq vars =="
+check "reports a variable and its origin" "nested-v1" "$BIN" vars "$COLL/users/list.http"
+check "names the file a value came from" "users/rq.toml" "$BIN" vars "$COLL/users/list.http"
+check "reports inherited secrets too" "secret:api_token" "$BIN" vars "$COLL/users/list.http"
+check "masks a secret by default" "****" "$BIN" vars "$COLL/users/list.http"
+check_not "and does not print its value" "tok-from-secrets-file" "$BIN" vars "$COLL/users/list.http"
+check "--show-secrets reveals it" "tok-from-secrets-file" \
+  "$BIN" vars "$COLL/users/list.http" --show-secrets
+check "--env changes the reported origin" "staging.toml" \
+  "$BIN" vars "$COLL/users/list.http" --env staging
+printf 'GET http://%s/{{nowhere}}\n' "$HTTP" > "$COLL/users/undefined.http"
+check "an undefined variable is called out" "undefined" "$BIN" vars "$COLL/users/undefined.http"
+
+echo
 echo "== Streaming =="
 # text/event-stream is streamed without asking.
 check "sse is auto-detected" "delta" "$BIN" get "$HTTP/sse?events=2" --http -B
