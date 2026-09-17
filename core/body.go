@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -56,12 +57,21 @@ func (req *BaseRequest) WithBody(body string, form, multipartForm bool) error {
 			if err != nil {
 				// Not JSON, so it cannot become query params: send it verbatim.
 				req.Body = body
-				req.Headers["Content-Type"] = "text/plain"
+				req.setIfAbsent("Content-Type", "text/plain")
 				return nil
 			}
 			return req.AddQueryString(mapBody)
 		}
 		req.Body = body
+		// The same downgrade, for the verbs that carry a body. Without it
+		// addDefaultHeaders fills in application/json for anything with a
+		// body, so `rq post url -b hello` and a piped CSV both announced
+		// themselves as JSON — the client asserting a payload type that is
+		// false. The check is on the bytes, not on how they were supplied,
+		// because -b, --body and piped stdin all arrive here.
+		if body != "" && !json.Valid([]byte(body)) {
+			req.setIfAbsent("Content-Type", "text/plain")
+		}
 		return nil
 	}
 }
