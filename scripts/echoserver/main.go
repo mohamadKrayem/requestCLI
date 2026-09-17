@@ -27,6 +27,7 @@ import (
 	"io"
 	"log"
 	"math/big"
+	"mime"
 	"net"
 	"net/http"
 	"sort"
@@ -93,8 +94,51 @@ type echoed struct {
 	Query   map[string]string `json:"query"`
 	Headers map[string]string `json:"headers"`
 	Cookies map[string]string `json:"cookies"`
-	Body    string            `json:"body"`
+	Body    json.RawMessage   `json:"body"`
 	TLS     bool              `json:"tls"`
+}
+
+// isJSONContentType reports whether a Content-Type declares JSON: the
+// application/json family, any +json suffix (application/problem+json and
+// friends), and the text/json some servers still send.
+func isJSONContentType(contentType string) bool {
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return false
+	}
+	mediaType = strings.ToLower(mediaType)
+	return mediaType == "application/json" ||
+		mediaType == "text/json" ||
+		strings.HasSuffix(mediaType, "+json")
+}
+
+// echoBody renders the received request body for the echoed response: as raw
+// JSON when the request declared a JSON Content-Type and the bytes parse, so a
+// caller reading the output sees `"body": {"id": 1}` rather than an escaped
+// string, and as a JSON string otherwise. An empty body stays `""`.
+//
+// Both conditions are required, rather than just parseability. This fixture
+// exists to mirror what a client sent, and the client is what chooses the
+// Content-Type: gating on it means a body rq mislabelled shows up as the wrong
+// shape here instead of being quietly reinterpreted. It also keeps a text/plain
+// `"hello"` distinguishable from a text/plain `hello`, which parseability alone
+// collapses into the same output.
+//
+// json.Marshal passes a RawMessage through with only its whitespace compacted,
+// so key order, duplicate keys and integers too large for float64 all survive
+// the round trip — the same fidelity rule the client's renderer follows, and
+// what makes this fixture usable for checking that the client preserved them.
+func echoBody(body []byte, contentType string) json.RawMessage {
+	if isJSONContentType(contentType) && json.Valid(body) {
+		return body
+	}
+	encoded, err := json.Marshal(string(body))
+	if err != nil {
+		// string never fails to marshal; the fallback only keeps the response
+		// valid JSON if that ever stops being true.
+		return json.RawMessage(`""`)
+	}
+	return encoded
 }
 
 func echo(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +150,7 @@ func echo(w http.ResponseWriter, r *http.Request) {
 		Query:   map[string]string{},
 		Headers: map[string]string{},
 		Cookies: map[string]string{},
-		Body:    string(body),
+		Body:    echoBody(body, r.Header.Get("Content-Type")),
 		TLS:     r.TLS != nil,
 	}
 	for k, v := range r.URL.Query() {

@@ -119,7 +119,7 @@ check "query params"            '"a": "1"'                   "$BIN" get "$HTTP/"
 check "custom headers"          '"X-Api-Token": "123"'       "$BIN" get "$HTTP/" -n X-API-Token=123 -B
 check "cookies"                 '"session": "abc"'           "$BIN" get "$HTTP/" -c session=abc -B
 check "basic auth"              '"authenticated": "yes"'     "$BIN" get "$HTTP/basic-auth" -a username=Mohamad,password=pass123 -B
-check "json body on POST"       'name\":\"Mohamad'           "$BIN" post "$HTTP/" -b '{"name":"Mohamad"}' -B
+check "json body on POST"       '"name": "Mohamad"'          "$BIN" post "$HTTP/" -b '{"name":"Mohamad"}' -B
 check "json body on GET -> query" '"a": "1"'                 "$BIN" get "$HTTP/" -b '{"a":1}' -B
 check "non-json body -> text"   '"Content-Type": "text/plain"' "$BIN" get "$HTTP/" -b 'hello' -B
 check "url-encoded form"        'x-www-form-urlencoded'      "$BIN" post "$HTTP/" -f -b '{"k":"v"}' -B
@@ -158,16 +158,16 @@ check "timeout is enforced" "timed out after 1s" \
 
 echo
 echo "== Multi-line stdin =="
-check "multi-line body"      'a\":1'         bash -c "printf '{\n\n\"a\":1\n};\n' | '$BIN' post '$HTTP/' --body -B"
-check "top-level array body" '[1,2,3]'       bash -c "printf '[\n1,\n2,\n3\n];\n' | '$BIN' post '$HTTP/' --body -B"
+check "multi-line body"      '"a": 1'        bash -c "printf '{\n\n\"a\":1\n};\n' | '$BIN' post '$HTTP/' --body -B"
+check "top-level array body" '[1, 2, 3]'     bash -c "printf '[\n1,\n2,\n3\n];\n' | '$BIN' post '$HTTP/' --body -B"
 check "headers+body together (header)" '"X-Api-Token": "123"' \
   bash -c "printf '{\n\"X-API-Token\":\"123\"\n};\n{\n\"a\":1\n};\n' | '$BIN' put '$HTTP/' --headers --body -B"
-check "headers+body together (body)" 'a\":1' \
+check "headers+body together (body)" '"a": 1' \
   bash -c "printf '{\n\"X-API-Token\":\"123\"\n};\n{\n\"a\":1\n};\n' | '$BIN' put '$HTTP/' --headers --body -B"
 
 echo
 echo "== Piped stdin body =="
-check "piped body reaches the server" 'name\":\"Mohamad' \
+check "piped body reaches the server" '"name": "Mohamad"' \
   bash -c "printf '{\"name\":\"Mohamad\"}' | '$BIN' post '$HTTP/' -B"
 check "--ignore-stdin suppresses the pipe" '"body": ""' \
   bash -c "printf '{\"name\":\"Mohamad\"}' | '$BIN' post '$HTTP/' -B --ignore-stdin"
@@ -315,7 +315,7 @@ check "a secret falls back to the environment" "ci-secret" \
 # correlation id would be useless.
 printf 'GET http://%s/?a={{$uuid}}&b={{$uuid}}\n' "$HTTP" > "$COLL/users/uuid.http"
 check "a {{\$uuid}} is stable within one request" "PASS" sh -c \
-  "$BIN run '$COLL/users/uuid.http' --http -B | grep -o '\"[ab]\": \"[^\"]*\"' | sed 's/.*: //' | uniq | wc -l | grep -q '^1\$' && echo PASS"
+  "$BIN run '$COLL/users/uuid.http' --http -B | grep -o '\"[ab]\": \"[^\"]*\"' | sed 's/.*: //' | uniq | wc -l | tr -d ' ' | grep -q '^1\$' && echo PASS"
 
 check "an unknown --env lists what exists" "staging" \
   "$BIN" run "$COLL/users/list.http" --env nope --http -S
@@ -436,7 +436,7 @@ echo
 echo "== Request items: body =="
 # Each of the four body encodings is echoed back by the fixture, so a body
 # built with the wrong bytes fails loudly here instead of merely "looking ok".
-check "json item body (no flags)"        'name\":\"Mohamad' \
+check "json item body (no flags)"        '"name": "Mohamad"' \
   "$BIN" post "$HTTP/" -B "name=Mohamad"
 check "large integer survives via item"  "1234567890123456789" \
   "$BIN" post "$HTTP/" -B "id:=1234567890123456789"
@@ -446,9 +446,9 @@ check "large integer survives on a query verb" "1234567890123456789" \
   "$BIN" get "$HTTP/" -B "id:=1234567890123456789"
 check "raw bool on a query verb"         '"active": "true"' \
   "$BIN" get "$HTTP/" -B "active:=true"
-check "raw field written verbatim"       'tags\":[1,2]' \
+check "raw field written verbatim"       '"tags": [1, 2]' \
   "$BIN" post "$HTTP/" -B "tags:=[1,2]"
-check "duplicate item keys: last wins"   'a\":\"2' \
+check "duplicate item keys: last wins"   '"a": "2"' \
   "$BIN" post "$HTTP/" -B "a=1" "a=2"
 check_not "duplicate item keys: earlier value dropped" 'a\":\"1' \
   "$BIN" post "$HTTP/" -B "a=1" "a=2"
