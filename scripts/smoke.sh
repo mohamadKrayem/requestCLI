@@ -122,6 +122,17 @@ check "basic auth"              '"authenticated": "yes"'     "$BIN" get "$HTTP/b
 check "json body on POST"       '"name": "Mohamad"'          "$BIN" post "$HTTP/" -b '{"name":"Mohamad"}' -B
 check "json body on GET -> query" '"a": "1"'                 "$BIN" get "$HTTP/" -b '{"a":1}' -B
 check "non-json body -> text"   '"Content-Type": "text/plain"' "$BIN" get "$HTTP/" -b 'hello' -B
+# The same downgrade on a verb that carries a body. Only the GET case was
+# asserted, so POST announcing a plain-text body as application/json went
+# unnoticed. A piped body reaches the same code path and is the likelier case.
+check "non-json body -> text (POST)" '"Content-Type": "text/plain"' "$BIN" post "$HTTP/" -b 'hello' -B
+check "piped non-json body -> text"  '"Content-Type": "text/plain"' \
+  bash -c "printf 'a,b\n1,2\n' | '$BIN' post '$HTTP/' -B"
+# ...but neither downgrade may overwrite a Content-Type the user set.
+check "explicit content-type wins (GET)"  '"Content-Type": "text/csv"' \
+  "$BIN" get "$HTTP/" -b 'hello' -B Content-Type:text/csv
+check "explicit content-type wins (POST)" '"Content-Type": "text/csv"' \
+  "$BIN" post "$HTTP/" -b 'hello' -B Content-Type:text/csv
 check "url-encoded form"        'x-www-form-urlencoded'      "$BIN" post "$HTTP/" -f -b '{"k":"v"}' -B
 check "form keeps -n headers"   '"X-Api-Token": "123"'       "$BIN" post "$HTTP/" -f -n X-API-Token=123 -b '{"k":"v"}' -B
 

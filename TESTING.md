@@ -186,10 +186,17 @@ $ ./rq get localhost:8080/ -b '{"a":1}' -B | grep -A2 query
     "a": "1"
   },
 
-# A body that is not JSON is sent verbatim as text/plain
+# A body that is not JSON is sent verbatim as text/plain, on any verb
 $ ./rq get localhost:8080/ -b 'hello' -B | grep -E 'body|text/plain'
   "body": "hello",
     "Content-Type": "text/plain",
+$ ./rq post localhost:8080/ -b 'hello' -B | grep -E 'body|text/plain'
+  "body": "hello",
+    "Content-Type": "text/plain",
+
+# An explicit Content-Type is never overwritten by that fallback
+$ ./rq post localhost:8080/ -b 'hello' -B Content-Type:text/csv | grep -i content-type
+    "Content-Type": "text/csv",
 ```
 
 Multi-line body from stdin:
