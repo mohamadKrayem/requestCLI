@@ -122,6 +122,60 @@ func TestWithBodyFallsBackToTextPlain(t *testing.T) {
 	}
 }
 
+// Regression: only the query-carrying verbs downgraded a non-JSON body, so
+// addDefaultHeaders labelled `rq post url -b hello`, and any piped non-JSON
+// body, as application/json — the client asserting a payload type that is false.
+func TestWithBodyFallsBackToTextPlainOnBodyCarryingVerbs(t *testing.T) {
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch} {
+		t.Run(method, func(t *testing.T) {
+			req := NewRequest(method, "http://example.com/")
+
+			if err := req.WithBody("a,b\n1,2\n", false, false); err != nil {
+				t.Fatalf("WithBody: %v", err)
+			}
+			if got := req.Headers["Content-Type"]; got != "text/plain" {
+				t.Errorf("Content-Type = %v, want text/plain", got)
+			}
+		})
+	}
+}
+
+// A JSON body is deliberately left unlabelled by WithBody, so the
+// application/json default still comes from one place.
+func TestWithBodyLeavesJSONForTheDefaultHeader(t *testing.T) {
+	req := NewRequest(http.MethodPost, "http://example.com/")
+
+	if err := req.WithBody(`{"a":1}`, false, false); err != nil {
+		t.Fatalf("WithBody: %v", err)
+	}
+	if got, ok := req.Headers["Content-Type"]; ok {
+		t.Errorf("Content-Type = %v, want it left to addDefaultHeaders", got)
+	}
+
+	req.addDefaultHeaders(true)
+	if got := req.Headers["Content-Type"]; got != "application/json" {
+		t.Errorf("after defaults, Content-Type = %v, want application/json", got)
+	}
+}
+
+// Regression: the query-verb branch assigned Content-Type directly, so the
+// fallback overwrote a header the user had set explicitly.
+func TestWithBodyKeepsAnExplicitContentType(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		t.Run(method, func(t *testing.T) {
+			req := NewRequest(method, "http://example.com/")
+			req.WithHeader("Content-Type", "text/csv")
+
+			if err := req.WithBody("a,b\n1,2\n", false, false); err != nil {
+				t.Fatalf("WithBody: %v", err)
+			}
+			if got := req.Headers["Content-Type"]; got != "text/csv" {
+				t.Errorf("Content-Type = %v, want text/csv", got)
+			}
+		})
+	}
+}
+
 func TestWithBodyJSONOnGetBecomesQueryParams(t *testing.T) {
 	req := NewRequest(http.MethodGet, "http://example.com/")
 
