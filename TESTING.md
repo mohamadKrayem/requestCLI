@@ -175,8 +175,10 @@ $ ./rq get localhost:8080/ --headers -B
 
 ```shell
 # JSON body on a method that carries one
-$ ./rq post localhost:8080/ -b '{"name":"Mohamad"}' -B | grep body
-  "body": "{\"name\":\"Mohamad\"}",
+$ ./rq post localhost:8080/ -b '{"name":"Mohamad"}' -B | grep -A2 body
+  "body": {
+    "name": "Mohamad"
+  },
 
 # JSON body on GET becomes query parameters instead
 $ ./rq get localhost:8080/ -b '{"a":1}' -B | grep -A2 query
@@ -205,7 +207,7 @@ Top-level arrays work, and blank lines are ignored:
 
 ```shell
 $ printf '[\n1,\n2,\n3\n];\n' | ./rq post localhost:8080/ --body -B | grep body
-  "body": "[1,2,3]",
+  "body": [1, 2, 3],
 ```
 
 Headers and body together — two documents, one stream:
@@ -489,8 +491,11 @@ $ ./rq get localhost:8080/ 'page==2' 'per_page==10' -B | grep -A3 query
 $ ./rq get localhost:8080/ 'User-Agent:' -B | grep -i user-agent   # nothing
 
 # JSON body items (no flags): field, raw field, form/multipart
-$ ./rq post localhost:8080/ name=Mohamad age:=22 -B | grep body
-  "body": "{\"name\":\"Mohamad\",\"age\":22}",
+$ ./rq post localhost:8080/ name=Mohamad age:=22 -B | grep -A3 body
+  "body": {
+    "name": "Mohamad",
+    "age": 22
+  },
 $ ./rq post localhost:8080/ -f name=Mohamad -B | grep body
   "body": "name=Mohamad",
 $ ./rq post localhost:8080/multipart avatar@/tmp/letter.txt name=Mohamad -B
@@ -520,8 +525,10 @@ Error: a file upload cannot be sent as a url-encoded form; drop -f
 ### Scenario Q — Piped stdin body and --ignore-stdin
 
 ```shell
-$ echo '{"name":"Mohamad"}' | ./rq post localhost:8080/ -B | grep body
-  "body": "{\"name\":\"Mohamad\"}\n",
+$ echo '{"name":"Mohamad"}' | ./rq post localhost:8080/ -B | grep -A2 body
+  "body": {
+    "name": "Mohamad"
+  },
 
 $ echo '{"name":"Mohamad"}' | ./rq post localhost:8080/ -B --ignore-stdin | grep '"body"'
   "body": "",
